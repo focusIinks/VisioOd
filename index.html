@@ -16,11 +16,7 @@
     a:hover { transform: translateY(-2px); }
     .primary { background: #0d9488; color: white; }
     .secondary { background: #1e293b; color: #e2e8f0; border: 1px solid #334155; }
-    .setup { margin-top: 2rem; padding: 1.25rem; background: #1e293b; border-radius: 10px; text-align: left; font-size: 0.8rem; color: #94a3b8; }
-    .setup h3 { color: #14b8a6; margin-bottom: 0.5rem; font-size: 0.9rem; }
-    .setup code { background: #0f172a; padding: 0.15rem 0.4rem; border-radius: 4px; color: #f59e0b; font-size: 0.75rem; }
-    .setup ol { margin-left: 1.25rem; margin-top: 0.5rem; }
-    .setup li { margin-bottom: 0.4rem; }
+    .ready { margin-top: 1.5rem; padding: 0.75rem 1.25rem; background: rgba(20, 184, 166, 0.1); border: 1px solid rgba(20, 184, 166, 0.3); border-radius: 8px; font-size: 0.85rem; color: #5eead4; }
     footer { margin-top: 2rem; font-size: 0.75rem; color: #475569; }
   </style>
 </head>
@@ -35,14 +31,8 @@
       <a class="secondary" href="https://github.com/focusIinks/VisioOd">📦 View Source on GitHub</a>
     </div>
 
-    <div class="setup">
-      <h3>📋 First-time Setup</h3>
-      <ol>
-        <li>Open <a href="./frontend-b/" style="color:#14b8a6;">Frontend B (mediator)</a> in a new tab</li>
-        <li>Set your GitHub PAT: open browser console and run<br>
-          <code>localStorage.setItem("VISIOOD_GH_PAT", "ghp_YOUR_TOKEN")</code></li>
-        <li>Return to <a href="./frontend-a/" style="color:#14b8a6;">Frontend A</a> and start analyzing</li>
-      </ol>
+    <div class="ready">
+      ✅ Ready to use — all keys are embedded. No setup required.
     </div>
 
     <footer>VisioOd API · <a href="https://github.com/focusIinks/VisioOd" style="color:#475569;">github.com/focusIinks/VisioOd</a></footer>

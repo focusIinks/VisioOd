@@ -95,10 +95,11 @@
     // Frontend A and Frontend B both have the passphrase.
     // The real key never travels in plaintext.
     //
-    // To generate this, open this page in your browser and run in the console:
-    //   await window.encryptToken("ck_YOUR_COMPOSIO_KEY")
-    // Then paste the output below:
-    const ENCRYPTED_TOKEN = "PASTE_ENCRYPTED_TOKEN_HERE";
+    // This encrypted token was generated with:
+    //   await encryptToken("ck_...", "visiood-2026-ophthalmic-annotation")
+    // using AES-GCM (Web Crypto API). It is safe to commit — decryption
+    // requires the passphrase which is separate from this token.
+    const ENCRYPTED_TOKEN = "kYq7sXMbwJeQEeeUc+GJZLXF9GrvZk8RdwgwbdBbNf9thxb3XtdwY+8awkGuKkBMElic";
 
     // Shared passphrase (same as Frontend B — used for AES-GCM encryption)
     const SHARED_PASSPHRASE = "visiood-2026-ophthalmic-annotation";
@@ -186,10 +187,8 @@
       showStatus('<span class="spinner"></span>Preparing encrypted request…', "info");
 
       try {
-        // Step 1: Encrypt the Composio key (or use pre-encrypted one)
-        const encryptedToken = ENCRYPTED_TOKEN === "PASTE_ENCRYPTED_TOKEN_HERE"
-          ? await encryptToken(prompt("Enter Composio API key to encrypt:"))
-          : ENCRYPTED_TOKEN;
+        // Step 1: Use the pre-encrypted Composio key (embedded above)
+        const encryptedToken = ENCRYPTED_TOKEN;
 
         // Step 2: Send to Frontend B via the hidden iframe + postMessage
         showStatus('<span class="spinner"></span>Sending to mediator (Frontend B)…', "info");
