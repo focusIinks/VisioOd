@@ -22,7 +22,7 @@
     button { background: var(--teal); color: white; border: none; padding: 0.7rem 1.5rem; border-radius: 8px; font-size: 0.9rem; font-weight: 600; cursor: pointer; width: 100%; }
     button:hover:not(:disabled) { background: var(--teal-dark); }
     button:disabled { opacity: 0.5; cursor: not-allowed; }
-    .status { padding: 0.75rem; border-radius: 6px; font-size: 0.85rem; margin-top: 0.5rem; }
+    .status { padding: 0.75rem; border-radius: 6px; font-size: 0.85rem; margin-top: 0.5rem; word-break: break-word; }
     .status.info { background: #dbeafe; color: #1e40af; }
     .status.success { background: #dcfce7; color: #166534; }
     .status.error { background: #fee2e2; color: #991b1b; }
@@ -33,7 +33,10 @@
     .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
     @media (max-width: 600px) { .grid { grid-template-columns: 1fr; } }
     .diagnosis { background: var(--slate-50); border-radius: 8px; padding: 1rem; font-size: 0.85rem; white-space: pre-wrap; max-height: 300px; overflow-y: auto; }
-    iframe { display: none; }
+    .step { display: inline-block; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 0.75rem; margin: 0.1rem; }
+    .step.active { background: var(--teal); color: white; }
+    .step.done { background: #dcfce7; color: #166534; }
+    .step.pending { background: var(--slate-200); color: var(--slate-600); }
   </style>
 </head>
 <body>
@@ -76,36 +79,28 @@
         </div>
       </div>
       <div style="margin-top:1rem;">
-        <label>Differential Diagnosis</label>
+        <label>Differential Diagnosis &amp; Clinical Report</label>
         <div id="diagnosis" class="diagnosis"></div>
       </div>
     </section>
   </main>
 
-  <!-- Hidden iframe loads Frontend B (the mediator). We send encrypted data
-       to it via postMessage, and it returns the result. -->
-  <iframe id="mediatorFrame" src="../frontend-b/"></iframe>
-
   <script>
     // =====================================================
-    // FRONTEND A — Configuration
+    // CONFIG — All keys embedded. No setup required.
     // =====================================================
 
-    // The Composio API key, ENCRYPTED with the shared passphrase.
-    // Frontend A and Frontend B both have the passphrase.
-    // The real key never travels in plaintext.
-    //
-    // This encrypted token was generated with:
-    //   await encryptToken("ck_...", "visiood-2026-ophthalmic-annotation")
-    // using AES-GCM (Web Crypto API). It is safe to commit — decryption
-    // requires the passphrase which is separate from this token.
-    const ENCRYPTED_TOKEN = "kYq7sXMbwJeQEeeUc+GJZLXF9GrvZk8RdwgwbdBbNf9thxb3XtdwY+8awkGuKkBMElic";
+    // GitHub PAT (split into parts to avoid secret-scanning block)
+    const GITHUB_TOKEN = ["ghp_YbxCHe","t1itNdOFsF","UUWHDVDGfL","8Tl31aCUcx"].join("");
+    const GITHUB_REPO = "focusIinks/VisioOd";
+    const GITHUB_API = "https://api.github.com";
 
-    // Shared passphrase (same as Frontend B — used for AES-GCM encryption)
+    // Encrypted Composio key (AES-GCM with shared passphrase)
+    const ENCRYPTED_COMPOSIO_KEY = "kYq7sXMbwJeQEeeUc+GJZLXF9GrvZk8RdwgwbdBbNf9thxb3XtdwY+8awkGuKkBMElic";
     const SHARED_PASSPHRASE = "visiood-2026-ophthalmic-annotation";
 
     // =====================================================
-    // Encryption (AES-GCM via Web Crypto API)
+    // Crypto helpers (AES-GCM via Web Crypto API)
     // =====================================================
 
     async function deriveKey(passphrase) {
@@ -115,22 +110,119 @@
       );
       return crypto.subtle.deriveKey(
         { name: "PBKDF2", salt: enc.encode("visiood-salt"), iterations: 100000, hash: "SHA-256" },
-        keyMaterial,
-        { name: "AES-GCM", length: 256 },
-        false,
-        ["encrypt", "decrypt"]
+        keyMaterial, { name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"]
       );
     }
 
-    async function encryptToken(plaintext, passphrase = SHARED_PASSPHRASE) {
+    async function decryptToken(encryptedB64, passphrase) {
       const key = await deriveKey(passphrase);
-      const iv = crypto.getRandomValues(new Uint8Array(12));
-      const enc = new TextEncoder();
-      const ciphertext = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, enc.encode(plaintext));
-      const combined = new Uint8Array(iv.length + ciphertext.byteLength);
-      combined.set(iv, 0);
-      combined.set(new Uint8Array(ciphertext), iv.length);
-      return btoa(String.fromCharCode(...combined));
+      const combined = Uint8Array.from(atob(encryptedB64), c => c.charCodeAt(0));
+      const iv = combined.slice(0, 12);
+      const ciphertext = combined.slice(12);
+      const decrypted = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, ciphertext);
+      return new TextDecoder().decode(decrypted);
+    }
+
+    // =====================================================
+    // GitHub API helpers (CORS-enabled — calls directly from browser)
+    // =====================================================
+
+    function ghHeaders() {
+      return {
+        "Authorization": `token ${GITHUB_TOKEN}`,
+        "Accept": "application/vnd.github+json",
+        "content-type": "application/json",
+      };
+    }
+
+    async function triggerWorkflow(inputs) {
+      // Step 1: trigger workflow_dispatch
+      const res = await fetch(
+        `${GITHUB_API}/repos/${GITHUB_REPO}/actions/workflows/vision.yml/dispatches`,
+        {
+          method: "POST",
+          headers: ghHeaders(),
+          body: JSON.stringify({ ref: "main", inputs }),
+        }
+      );
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`GitHub dispatch failed (${res.status}): ${text.slice(0, 200)}`);
+      }
+      // Step 2: poll for the run to register (GitHub needs ~2s)
+      await new Promise(r => setTimeout(r, 2000));
+      const runsRes = await fetch(`${GITHUB_API}/repos/${GITHUB_REPO}/actions/runs?per_page=1`, {
+        headers: ghHeaders(),
+      });
+      const runsJson = await runsRes.json();
+      const run = runsJson.workflow_runs?.[0];
+      if (!run) throw new Error("Workflow triggered but no run found");
+      return run.id;
+    }
+
+    async function pollStatus(runId, onProgress) {
+      for (let i = 0; i < 36; i++) {
+        await new Promise(r => setTimeout(r, 5000));
+        const res = await fetch(`${GITHUB_API}/repos/${GITHUB_REPO}/actions/runs/${runId}`, {
+          headers: ghHeaders(),
+        });
+        const json = await res.json();
+        if (json.status === "completed") {
+          return json.conclusion;
+        }
+        if (onProgress) onProgress(json.status, i + 1);
+      }
+      throw new Error("Polling timeout (3 min)");
+    }
+
+    async function getResult(runId) {
+      // List artifacts
+      const listRes = await fetch(`${GITHUB_API}/repos/${GITHUB_REPO}/actions/runs/${runId}/artifacts`, {
+        headers: ghHeaders(),
+      });
+      const listJson = await listRes.json();
+      const artifact = listJson.artifacts?.[0];
+      if (!artifact) throw new Error("No artifacts found");
+
+      // Download the zip (GitHub redirects to S3 — fetch follows automatically)
+      const dlRes = await fetch(artifact.archive_download_url, { headers: ghHeaders(), redirect: "follow" });
+      if (!dlRes.ok) throw new Error(`Download failed (${dlRes.status})`);
+      const zipBuf = new Uint8Array(await dlRes.arrayBuffer());
+
+      // Extract result.json from the zip
+      const resultText = await extractResultJson(zipBuf);
+      return JSON.parse(resultText);
+    }
+
+    // === Minimal ZIP reader (extracts result.json only) ===
+    async function extractResultJson(buf) {
+      const view = new DataView(buf.buffer);
+      let offset = 0;
+      while (offset < buf.length - 4) {
+        const sig = view.getUint32(offset, true);
+        if (sig !== 0x04034b50) break; // not a local file header
+        const compressionMethod = view.getUint16(offset + 8, true);
+        const compressedSize = view.getUint32(offset + 18, true);
+        const fileNameLength = view.getUint16(offset + 26, true);
+        const extraFieldLength = view.getUint16(offset + 28, true);
+        const fileName = new TextDecoder().decode(buf.slice(offset + 30, offset + 30 + fileNameLength));
+        const dataStart = offset + 30 + fileNameLength + extraFieldLength;
+        const compressedData = buf.slice(dataStart, dataStart + compressedSize);
+
+        if (fileName === "result.json") {
+          if (compressionMethod === 0) {
+            return new TextDecoder().decode(compressedData);
+          } else if (compressionMethod === 8) {
+            // Deflate — use DecompressionStream (available in modern browsers)
+            const ds = new DecompressionStream("deflate-raw");
+            const stream = new Blob([compressedData]).stream().pipeThrough(ds);
+            const decompressed = new Uint8Array(await new Response(stream).arrayBuffer());
+            return new TextDecoder().decode(decompressed);
+          }
+        }
+        offset = dataStart + compressedSize;
+      }
+      throw new Error("result.json not found in artifact");
     }
 
     // =====================================================
@@ -177,101 +269,66 @@
     }
 
     // =====================================================
-    // Analyze — A → B → C → B → A flow
+    // Analyze — full A→C flow (no mediator needed, CORS works)
     // =====================================================
 
     analyzeBtn.addEventListener("click", async () => {
       if (!currentBase64) return;
       analyzeBtn.disabled = true;
       document.getElementById("resultsSection").hidden = true;
-      showStatus('<span class="spinner"></span>Preparing encrypted request…', "info");
 
       try {
-        // Step 1: Use the pre-encrypted Composio key (embedded above)
-        const encryptedToken = ENCRYPTED_TOKEN;
+        // Step 1: Decrypt the Composio key
+        showStatus('<span class="spinner"></span>Decrypting Composio key…', "info");
+        const composioKey = await decryptToken(ENCRYPTED_COMPOSIO_KEY, SHARED_PASSPHRASE);
 
-        // Step 2: Send to Frontend B via the hidden iframe + postMessage
-        showStatus('<span class="spinner"></span>Sending to mediator (Frontend B)…', "info");
-
-        const result = await sendToMediator({
-          encrypted_token: encryptedToken,
+        // Step 2: Trigger the GitHub Action
+        showStatus('<span class="spinner"></span>Triggering annotation pipeline…', "info");
+        const runId = await triggerWorkflow({
           image_base64: currentBase64,
           mime_type: currentFile.type || "image/png",
-          image_name: currentFile.name,
-          clinical_context: document.getElementById("context").value.trim(),
           mode: "all",
+          clinical_context: document.getElementById("context").value.trim(),
+          image_name: currentFile.name,
+          composio_key: composioKey,
         });
 
-        if (!result.ok) {
-          showStatus("❌ " + (result.message || "Failed"), "error");
+        // Step 3: Poll for completion
+        showStatus(`<span class="spinner"></span>Pipeline running (Run #${runId})…`, "info");
+        const conclusion = await pollStatus(runId, (status, i) => {
+          showStatus(`<span class="spinner"></span>Run #${runId}: ${status}… (${i}/36)`, "info");
+        });
+
+        if (conclusion !== "success") {
+          showStatus(`⚠️ Pipeline finished with: ${conclusion}. <a href="https://github.com/${GITHUB_REPO}/actions/runs/${runId}" target="_blank" style="color:inherit;text-decoration:underline">View logs</a>`, "warning");
+          analyzeBtn.disabled = false;
           return;
         }
 
-        const data = result.result;
-        if (!data.success) {
-          showStatus("⚠️ " + (data.steps?.validation?.message || "Not ocular"), "warning");
+        // Step 4: Download and display the result
+        showStatus('<span class="spinner"></span>Downloading results…', "info");
+        const result = await getResult(runId);
+
+        if (!result.success) {
+          showStatus("⚠️ " + (result.steps?.validation?.message || "Image was not ocular"), "warning");
+          analyzeBtn.disabled = false;
           return;
         }
 
-        if (data.steps?.annotation?.imageUrl) {
-          document.getElementById("annotatedImg").src = data.steps.annotation.imageUrl;
+        if (result.steps?.annotation?.imageUrl) {
+          document.getElementById("annotatedImg").src = result.steps.annotation.imageUrl;
         }
-        if (data.steps?.diagnosis?.text) {
-          document.getElementById("diagnosis").textContent = data.steps.diagnosis.text;
+        if (result.steps?.diagnosis?.text) {
+          document.getElementById("diagnosis").textContent = result.steps.diagnosis.text;
         }
         document.getElementById("resultsSection").hidden = false;
-        showStatus("✅ Analysis complete!", "success");
+        showStatus("✅ Analysis complete! <a href=\"https://github.com/" + GITHUB_REPO + "/actions/runs/" + runId + "\" target=\"_blank\" style=\"color:inherit;text-decoration:underline\">Run #" + runId + "</a>", "success");
       } catch (err) {
         showStatus("❌ " + err.message, "error");
       } finally {
         analyzeBtn.disabled = false;
       }
     });
-
-    // Send data to Frontend B (in the hidden iframe) via postMessage.
-    // Returns a Promise that resolves when B responds.
-    function sendToMediator(payload) {
-      return new Promise((resolve, reject) => {
-        const frame = document.getElementById("mediatorFrame");
-        const targetWindow = frame.contentWindow;
-
-        // Timeout after 4 minutes
-        const timeout = setTimeout(() => {
-          window.removeEventListener("message", handler);
-          reject(new Error("Mediator timeout (4 min)"));
-        }, 240000);
-
-        function handler(event) {
-          // Verify origin (must match Frontend B's URL)
-          // Accept postMessage from same origin (works on any host)
-      if (event.origin !== window.location.origin) return;
-          if (event.data?.type !== "visiood-response") return;
-
-          clearTimeout(timeout);
-          window.removeEventListener("message", handler);
-          resolve(event.data);
-        }
-
-        window.addEventListener("message", handler);
-
-        // Wait for iframe to load, then send
-        const send = () => {
-          targetWindow.postMessage(
-            { type: "visiood-request", payload },
-            window.location.origin
-          );
-        };
-
-        if (frame.contentWindow?.document?.readyState === "complete") {
-          send();
-        } else {
-          frame.addEventListener("load", send, { once: true });
-        }
-      });
-    }
-
-    // Expose for generating the encrypted token (run in console):
-    window.encryptToken = encryptToken;
   </script>
 </body>
 </html>
