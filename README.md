@@ -2,109 +2,108 @@
 
 **AI-Powered Ophthalmic Annotation & Differential Diagnosis API**
 
-A serverless API that runs entirely on GitHub Actions. Each endpoint is a workflow worker that talks to the [Composio MCP](https://mcp.composio.dev) server to validate, annotate, and diagnose ocular images using Google's Gemini Nano Banana model.
+A serverless API architecture where a **static frontend** calls a **Cloudflare Worker mediator**, which securely triggers **GitHub Actions workers** that talk to **Composio MCP** (Gemini Nano Banana) to validate, annotate, and diagnose ocular images.
 
-## How It Works
+## Architecture
 
 ```
-Your Frontend  →  GitHub Actions API (trigger workflow)  →  VisioOd Worker  →  Composio MCP  →  Gemini Nano Banana  →  Result Artifact
+Static Frontend (GitHub Pages)
+    │  POST /vision { image_base64, mode, ... }
+    │  (no tokens — just the mediator URL)
+    ▼
+Cloudflare Worker (Mediator)
+    │  holds GITHUB_TOKEN + COMPOSIO_API_KEY as secrets
+    │  triggers workflow_dispatch
+    ▼
+GitHub Actions (VisioOd repo)
+    │  runs vision.js worker
+    │  calls Composio MCP → Gemini Nano Banana
+    │  uploads result.json artifact
+    ▼
+Cloudflare Worker downloads artifact → returns result to frontend
 ```
 
-- **No server to maintain** — runs on GitHub Actions
-- **Separable frontend** — your existing app calls this API via the GitHub REST API
-- **Extensible** — add new endpoints by dropping in a workflow + worker script
+**No tokens are ever exposed to the browser.** The frontend only knows the mediator URL.
 
-## Setup
+## Quick Start
 
-### 1. Add the Composio API key as a repository secret
-
-Go to **Settings → Secrets and variables → Actions → New repository secret**:
-- Name: `COMPOSIO_API_KEY`
-- Value: your Composio API key (e.g., `ck_yVuv7G4i6PxmqI5xNVA_`)
-
-### 2. Enable GitHub Pages (for the API docs)
-
-Go to **Settings → Pages → Source: GitHub Actions**. The docs workflow will deploy automatically on push to `main`.
-
-## API Endpoints
-
-### `POST /vision` — Ophthalmic Annotation Pipeline
+### 1. Deploy the Mediator (Cloudflare Worker)
 
 ```bash
-curl -X POST \
-  -H "Authorization: token ghp_YOUR_GITHUB_TOKEN" \
-  -H "Accept: application/vnd.github+json" \
-  https://api.github.com/repos/focusIinks/VisioOd/actions/workflows/vision.yml/dispatches \
+cd worker
+npm install
+
+# Set secrets (one-time)
+npx wrangler secret put GITHUB_TOKEN        # your GitHub PAT (repo+workflow scope)
+npx wrangler secret put COMPOSIO_API_KEY    # your Composio key (ck_...)
+npx wrangler secret put API_KEY             # optional: shared secret for frontend auth
+
+# Deploy
+npx wrangler deploy
+```
+
+You'll get a URL like: `https://visiood-mediator.your-subdomain.workers.dev`
+
+### 2. Deploy the Static Frontend (GitHub Pages)
+
+The frontend is in `frontend/index.html`. To deploy:
+
+1. Edit `frontend/index.html` — set `MEDIATOR_URL` to your worker URL (and `API_KEY` if you set one)
+2. Push to the `docs/` folder (or enable GitHub Pages on the repo)
+3. Your frontend is live at `https://focusIinks.github.io/VisioOd/`
+
+### 3. Use It
+
+Open the frontend URL, upload an ocular image, click **Analyze Image**. The pipeline:
+1. **Validate** — checks if the image is ocular
+2. **Annotate** — overlays clinical findings (red/yellow/green markers)
+3. **Diagnose** — generates a structured differential diagnosis report
+
+## API Reference (Mediator Endpoints)
+
+### `POST /vision` — Trigger Annotation Pipeline
+
+```bash
+curl -X POST https://visiood-mediator.YOUR-SUBDOMAIN.workers.dev/vision \
+  -H "content-type: application/json" \
+  -H "Authorization: Bearer YOUR_API_KEY" \
   -d '{
-    "ref": "main",
-    "inputs": {
-      "image_base64": "'"$(base64 -w0 eye.jpg)"'",
-      "mime_type": "image/jpeg",
-      "mode": "all",
-      "clinical_context": "45yo male, 3-day redness OD",
-      "image_name": "eye_photo.jpg"
-    }
+    "image_base64": "...",
+    "mime_type": "image/png",
+    "mode": "all",
+    "clinical_context": "45yo male, redness OD",
+    "image_name": "eye.jpg"
   }'
 ```
 
-**Inputs:**
+**Response:** `{ "ok": true, "runId": 12345678 }`
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `image_base64` | string | Yes | Base64-encoded image (no `data:` prefix) |
-| `mime_type` | string | No | `image/png` (default), `image/jpeg`, `image/webp` |
-| `mode` | string | No | `all` (default), `validate`, `annotate`, `diagnose` |
-| `clinical_context` | string | No | Patient history, symptoms, prior findings |
-| `image_name` | string | No | Filename for reference |
-
-**Pipeline steps** (mode: `all`):
-1. **Validate** — checks if the image is ocular. Stops if not.
-2. **Annotate** — overlays clinical findings (red/yellow/green markers) on the original image
-3. **Diagnose** — generates a structured text report with differential diagnoses
-
-### `POST /tools` — List Composio MCP Tools
+### `GET /status?runId=X` — Poll Run Status
 
 ```bash
-curl -X POST \
-  -H "Authorization: token ghp_YOUR_GITHUB_TOKEN" \
-  -H "Accept: application/vnd.github+json" \
-  https://api.github.com/repos/focusIinks/VisioOd/actions/workflows/tools.yml/dispatches \
-  -d '{"ref": "main", "inputs": {}}'
+curl "https://visiood-mediator.YOUR-SUBDOMAIN.workers.dev/status?runId=12345678" \
+  -H "Authorization: Bearer YOUR_API_KEY"
 ```
 
-### `GET /runs/{run_id}` — Check Status & Get Result
+**Response:** `{ "ok": true, "status": "completed", "conclusion": "success" }`
+
+### `GET /result?runId=X` — Get Result
 
 ```bash
-# Get run status
-curl -s -H "Authorization: token ghp_YOUR_TOKEN" \
-  https://api.github.com/repos/focusIinks/VisioOd/actions/runs/{RUN_ID}
-
-# List artifacts (download the result)
-curl -s -H "Authorization: token ghp_YOUR_TOKEN" \
-  https://api.github.com/repos/focusIinks/VisioOd/actions/runs/{RUN_ID}/artifacts
+curl "https://visiood-mediator.YOUR-SUBDOMAIN.workers.dev/result?runId=12345678" \
+  -H "Authorization: Bearer YOUR_API_KEY"
 ```
 
-## Result Format
-
-The vision pipeline writes a `result.json` artifact:
-
+**Response:**
 ```json
 {
-  "mode": "all",
-  "imageName": "eye_photo.jpg",
-  "startedAt": "2026-08-02T14:00:00Z",
-  "completedAt": "2026-08-02T14:01:30Z",
-  "success": true,
-  "steps": {
-    "validation": {
-      "isOcular": true,
-      "message": "Ocular image confirmed."
-    },
-    "annotation": {
-      "imageUrl": "https://temp...r2.cloudflarestorage.com/.../generated_image.jpg"
-    },
-    "diagnosis": {
-      "text": "1) Image quality assessment..."
+  "ok": true,
+  "result": {
+    "success": true,
+    "steps": {
+      "validation": { "isOcular": true, "message": "Ocular image confirmed." },
+      "annotation": { "imageUrl": "https://temp...r2.cloudflarestorage.com/..." },
+      "diagnosis": { "text": "1) Image quality assessment..." }
     }
   }
 }
@@ -114,33 +113,42 @@ The vision pipeline writes a `result.json` artifact:
 
 ```
 VisioOd/
+├── worker/                # Cloudflare Worker (mediator)
+│   ├── index.js           # Worker code (handles /vision, /status, /result)
+│   ├── wrangler.toml      # Cloudflare config
+│   └── package.json
+├── frontend/              # Static frontend (GitHub Pages)
+│   └── index.html         # Pure HTML/JS — no build step
 ├── .github/workflows/
-│   ├── vision.yml      # /vision endpoint worker
-│   ├── tools.yml       # /tools endpoint worker
-│   └── docs.yml        # deploys API docs to GitHub Pages
-├── src/
-│   ├── mcp-client.js   # Composio MCP client (standalone)
-│   ├── vision.js       # Vision pipeline worker
-│   ├── tools.js        # Tools lister worker
-│   └── prompts.js      # Clinical system prompts
-├── docs/
-│   └── index.html      # API documentation website
-├── package.json
+│   ├── vision.yml         # /vision GitHub Actions worker
+│   ├── tools.yml          # /tools GitHub Actions worker
+│   └── docs.yml           # Deploys docs to GitHub Pages
+├── src/                   # Worker scripts (run inside GitHub Actions)
+│   ├── mcp-client.js      # Composio MCP client
+│   ├── vision.js          # Annotation pipeline
+│   ├── tools.js           # Tools lister
+│   └── prompts.js         # Clinical prompts
+├── docs/                  # API documentation website
 └── README.md
 ```
 
+## Security Model
+
+| Component | Has Access To | Exposed to Browser? |
+|-----------|--------------|---------------------|
+| Static Frontend | Mediator URL only | ✅ (safe) |
+| Cloudflare Worker | GITHUB_TOKEN, COMPOSIO_API_KEY | ❌ (secrets) |
+| GitHub Actions | COMPOSIO_API_KEY (repo secret) | ❌ (secrets) |
+| Composio MCP | Your Composio account | ❌ (server-side only) |
+
+**The frontend never sees any token.** It only calls the mediator URL. The mediator uses its server-side secrets to trigger GitHub Actions and download results.
+
 ## Adding New Endpoints
 
-1. Create `src/your-endpoint.js` — use `ComposioMcpClient` to call MCP tools
-2. Create `.github/workflows/your-endpoint.yml` — triggers on `workflow_dispatch`, runs the script, uploads result
-3. Document it in `docs/index.html` and this README
-
-## Tech Stack
-
-- **Runtime**: GitHub Actions (ubuntu-latest) + Bun
-- **MCP Client**: `@modelcontextprotocol/sdk` (StreamableHTTP transport)
-- **AI**: Composio MCP → Gemini Nano Banana Pro (`gemini-3-pro-image-preview`)
-- **Docs**: GitHub Pages
+1. Add a worker script in `src/` (e.g., `src/screening.js`)
+2. Add a workflow in `.github/workflows/` (e.g., `screening.yml`)
+3. Add a route in `worker/index.js` (e.g., `POST /screening`)
+4. Document it in `docs/index.html`
 
 ## License
 
