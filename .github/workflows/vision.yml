@@ -1,15 +1,12 @@
 name: Vision API
 run-name: "Vision: ${{ inputs.mode }} — ${{ inputs.image_name || 'image' }}"
 
-# /vision endpoint — triggered via GitHub Actions workflow_dispatch API.
+# Frontend C — the GitHub Action worker.
 #
-# Runs the 3-step ophthalmic annotation pipeline:
-#   validate → annotate → diagnose
+# Triggered by Frontend B (the mediator) with the DECRYPTED Composio key
+# passed as an input. The key is used in-memory only (not printed, not logged).
 #
-# Usage:
-#   POST https://api.github.com/repos/${{ github.repository_owner }}/VisioOd/actions/workflows/vision.yml/dispatches
-#   Headers: Authorization: token <GITHUB_PAT>, Accept: application/vnd.github+json
-#   Body: { "ref": "main", "inputs": { "image_base64": "...", "mime_type": "image/png", "mode": "all" } }
+# Flow: Frontend A (encrypts key) → Frontend B (decrypts, triggers this) → C (uses key)
 
 on:
   workflow_dispatch:
@@ -18,7 +15,7 @@ on:
         description: "Base64-encoded image (no data: prefix)"
         required: true
       mime_type:
-        description: "Image MIME type (image/png, image/jpeg, image/webp)"
+        description: "Image MIME type"
         required: false
         default: "image/png"
       mode:
@@ -26,16 +23,19 @@ on:
         required: false
         default: "all"
       clinical_context:
-        description: "Optional clinical context (history, symptoms, etc.)"
+        description: "Optional clinical context"
         required: false
         default: ""
       image_name:
-        description: "Image filename (for reference)"
+        description: "Image filename"
         required: false
         default: "uploaded.png"
+      composio_key:
+        description: "Decrypted Composio API key (from Frontend B)"
+        required: true
 
 permissions:
-  contents: write
+  contents: read
   actions: read
 
 jobs:
@@ -56,7 +56,9 @@ jobs:
 
       - name: Run vision pipeline
         env:
-          COMPOSIO_API_KEY: ${{ secrets.COMPOSIO_API_KEY }}
+          # Use the decrypted key passed from Frontend B.
+          # Falls back to the repo secret if the input is empty.
+          COMPOSIO_API_KEY: ${{ inputs.composio_key || secrets.COMPOSIO_API_KEY }}
         run: |
           node src/vision.js \
             --image-base64 "${{ inputs.image_base64 }}" \
@@ -73,10 +75,8 @@ jobs:
           path: result.json
           retention-days: 30
 
-      - name: Output run ID
+      - name: Output
         run: |
           echo "::notice::Vision pipeline complete. Run ID: ${{ github.run_id }}"
-          echo "::notice::Download result: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-          echo ""
           echo "=== RESULT ==="
           cat result.json | head -50

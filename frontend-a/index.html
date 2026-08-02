@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OcuAnnotate Pro — Ophthalmic Annotation</title>
+  <style>
+    :root { --teal: #0d9488; --teal-dark: #0f766e; --slate-50: #f8fafc; --slate-200: #e2e8f0; --slate-600: #475569; --slate-800: #1e293b; }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--slate-50); color: var(--slate-800); line-height: 1.6; }
+    header { background: linear-gradient(135deg, var(--teal), var(--teal-dark)); color: white; padding: 1.5rem; text-align: center; }
+    header h1 { font-size: 1.4rem; }
+    header p { font-size: 0.8rem; opacity: 0.9; }
+    main { max-width: 600px; margin: 0 auto; padding: 1.5rem; }
+    section { background: white; border: 1px solid var(--slate-200); border-radius: 12px; padding: 1.25rem; margin-bottom: 1rem; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+    h2 { font-size: 1rem; margin-bottom: 0.75rem; }
+    label { display: block; font-size: 0.8rem; font-weight: 600; margin-bottom: 0.3rem; color: var(--slate-600); }
+    input, textarea { width: 100%; padding: 0.5rem; border: 1px solid var(--slate-200); border-radius: 6px; font-size: 0.85rem; margin-bottom: 0.75rem; font-family: inherit; }
+    .drop-zone { border: 2px dashed var(--slate-200); border-radius: 8px; padding: 1.5rem; text-align: center; cursor: pointer; }
+    .drop-zone:hover { border-color: var(--teal); }
+    .drop-zone p { font-size: 0.85rem; color: var(--slate-600); }
+    button { background: var(--teal); color: white; border: none; padding: 0.7rem 1.5rem; border-radius: 8px; font-size: 0.9rem; font-weight: 600; cursor: pointer; width: 100%; }
+    button:hover:not(:disabled) { background: var(--teal-dark); }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .status { padding: 0.75rem; border-radius: 6px; font-size: 0.85rem; margin-top: 0.5rem; }
+    .status.info { background: #dbeafe; color: #1e40af; }
+    .status.success { background: #dcfce7; color: #166534; }
+    .status.error { background: #fee2e2; color: #991b1b; }
+    .status.warning { background: #fef3c7; color: #92400e; }
+    .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid currentColor; border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite; vertical-align: middle; margin-right: 0.3rem; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .result-img { max-width: 100%; border-radius: 8px; margin-top: 0.5rem; border: 1px solid var(--slate-200); }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+    @media (max-width: 600px) { .grid { grid-template-columns: 1fr; } }
+    .diagnosis { background: var(--slate-50); border-radius: 8px; padding: 1rem; font-size: 0.85rem; white-space: pre-wrap; max-height: 300px; overflow-y: auto; }
+    iframe { display: none; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>👁️ OcuAnnotate Pro</h1>
+    <p>Upload ocular image for AI annotation &amp; differential diagnosis</p>
+  </header>
+
+  <main>
+    <section>
+      <h2>1. Upload Ocular Image</h2>
+      <div class="drop-zone" id="dropZone">
+        <p>📎 Drop image here or click to browse</p>
+        <input type="file" id="fileInput" accept="image/*" hidden>
+      </div>
+      <img id="preview" style="max-width:100%;max-height:150px;border-radius:8px;margin-top:0.5rem;" hidden>
+    </section>
+
+    <section>
+      <h2>2. Clinical Context (Optional)</h2>
+      <textarea id="context" placeholder="e.g., 45yo male, 3-day redness OD, VA 20/20" style="min-height:50px;resize:vertical;"></textarea>
+    </section>
+
+    <section>
+      <h2>3. Analyze</h2>
+      <button id="analyzeBtn" disabled>Analyze Image</button>
+      <div id="status" hidden></div>
+    </section>
+
+    <section id="resultsSection" hidden>
+      <h2>Results</h2>
+      <div class="grid">
+        <div>
+          <label>Original</label>
+          <img id="originalImg" class="result-img">
+        </div>
+        <div>
+          <label>Annotated</label>
+          <img id="annotatedImg" class="result-img">
+        </div>
+      </div>
+      <div style="margin-top:1rem;">
+        <label>Differential Diagnosis</label>
+        <div id="diagnosis" class="diagnosis"></div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Hidden iframe loads Frontend B (the mediator). We send encrypted data
+       to it via postMessage, and it returns the result. -->
+  <iframe id="mediatorFrame" src="https://focusIinks.github.io/VisioOd/frontend-b/"></iframe>
+
+  <script>
+    // =====================================================
+    // FRONTEND A — Configuration
+    // =====================================================
+
+    // The Composio API key, ENCRYPTED with the shared passphrase.
+    // Frontend A and Frontend B both have the passphrase.
+    // The real key never travels in plaintext.
+    //
+    // To generate this, open this page in your browser and run in the console:
+    //   await window.encryptToken("ck_YOUR_COMPOSIO_KEY")
+    // Then paste the output below:
+    const ENCRYPTED_TOKEN = "PASTE_ENCRYPTED_TOKEN_HERE";
+
+    // Shared passphrase (same as Frontend B — used for AES-GCM encryption)
+    const SHARED_PASSPHRASE = "visiood-2026-ophthalmic-annotation";
+
+    // =====================================================
+    // Encryption (AES-GCM via Web Crypto API)
+    // =====================================================
+
+    async function deriveKey(passphrase) {
+      const enc = new TextEncoder();
+      const keyMaterial = await crypto.subtle.importKey(
+        "raw", enc.encode(passphrase), "PBKDF2", false, ["deriveKey"]
+      );
+      return crypto.subtle.deriveKey(
+        { name: "PBKDF2", salt: enc.encode("visiood-salt"), iterations: 100000, hash: "SHA-256" },
+        keyMaterial,
+        { name: "AES-GCM", length: 256 },
+        false,
+        ["encrypt", "decrypt"]
+      );
+    }
+
+    async function encryptToken(plaintext, passphrase = SHARED_PASSPHRASE) {
+      const key = await deriveKey(passphrase);
+      const iv = crypto.getRandomValues(new Uint8Array(12));
+      const enc = new TextEncoder();
+      const ciphertext = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, enc.encode(plaintext));
+      const combined = new Uint8Array(iv.length + ciphertext.byteLength);
+      combined.set(iv, 0);
+      combined.set(new Uint8Array(ciphertext), iv.length);
+      return btoa(String.fromCharCode(...combined));
+    }
+
+    // =====================================================
+    // File handling
+    // =====================================================
+
+    let currentFile = null;
+    let currentBase64 = null;
+
+    const dropZone = document.getElementById("dropZone");
+    const fileInput = document.getElementById("fileInput");
+    const preview = document.getElementById("preview");
+    const analyzeBtn = document.getElementById("analyzeBtn");
+    const statusDiv = document.getElementById("status");
+
+    function handleFile(file) {
+      if (!file || !file.type.startsWith("image/")) return;
+      currentFile = file;
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        preview.src = e.target.result;
+        preview.hidden = false;
+        currentBase64 = e.target.result.split(",")[1];
+        document.getElementById("originalImg").src = e.target.result;
+        analyzeBtn.disabled = false;
+      };
+      reader.readAsDataURL(file);
+    }
+
+    dropZone.addEventListener("click", () => fileInput.click());
+    fileInput.addEventListener("change", (e) => handleFile(e.target.files[0]));
+    dropZone.addEventListener("dragover", (e) => { e.preventDefault(); dropZone.style.borderColor = "#0d9488"; });
+    dropZone.addEventListener("dragleave", () => dropZone.style.borderColor = "#e2e8f0");
+    dropZone.addEventListener("drop", (e) => {
+      e.preventDefault();
+      dropZone.style.borderColor = "#e2e8f0";
+      handleFile(e.dataTransfer.files[0]);
+    });
+
+    function showStatus(msg, type = "info") {
+      statusDiv.hidden = false;
+      statusDiv.className = "status " + type;
+      statusDiv.innerHTML = msg;
+    }
+
+    // =====================================================
+    // Analyze — A → B → C → B → A flow
+    // =====================================================
+
+    analyzeBtn.addEventListener("click", async () => {
+      if (!currentBase64) return;
+      analyzeBtn.disabled = true;
+      document.getElementById("resultsSection").hidden = true;
+      showStatus('<span class="spinner"></span>Preparing encrypted request…', "info");
+
+      try {
+        // Step 1: Encrypt the Composio key (or use pre-encrypted one)
+        const encryptedToken = ENCRYPTED_TOKEN === "PASTE_ENCRYPTED_TOKEN_HERE"
+          ? await encryptToken(prompt("Enter Composio API key to encrypt:"))
+          : ENCRYPTED_TOKEN;
+
+        // Step 2: Send to Frontend B via the hidden iframe + postMessage
+        showStatus('<span class="spinner"></span>Sending to mediator (Frontend B)…', "info");
+
+        const result = await sendToMediator({
+          encrypted_token: encryptedToken,
+          image_base64: currentBase64,
+          mime_type: currentFile.type || "image/png",
+          image_name: currentFile.name,
+          clinical_context: document.getElementById("context").value.trim(),
+          mode: "all",
+        });
+
+        if (!result.ok) {
+          showStatus("❌ " + (result.message || "Failed"), "error");
+          return;
+        }
+
+        const data = result.result;
+        if (!data.success) {
+          showStatus("⚠️ " + (data.steps?.validation?.message || "Not ocular"), "warning");
+          return;
+        }
+
+        if (data.steps?.annotation?.imageUrl) {
+          document.getElementById("annotatedImg").src = data.steps.annotation.imageUrl;
+        }
+        if (data.steps?.diagnosis?.text) {
+          document.getElementById("diagnosis").textContent = data.steps.diagnosis.text;
+        }
+        document.getElementById("resultsSection").hidden = false;
+        showStatus("✅ Analysis complete!", "success");
+      } catch (err) {
+        showStatus("❌ " + err.message, "error");
+      } finally {
+        analyzeBtn.disabled = false;
+      }
+    });
+
+    // Send data to Frontend B (in the hidden iframe) via postMessage.
+    // Returns a Promise that resolves when B responds.
+    function sendToMediator(payload) {
+      return new Promise((resolve, reject) => {
+        const frame = document.getElementById("mediatorFrame");
+        const targetWindow = frame.contentWindow;
+
+        // Timeout after 4 minutes
+        const timeout = setTimeout(() => {
+          window.removeEventListener("message", handler);
+          reject(new Error("Mediator timeout (4 min)"));
+        }, 240000);
+
+        function handler(event) {
+          // Verify origin (must match Frontend B's URL)
+          if (event.origin !== "https://focusIinks.github.io") return;
+          if (event.data?.type !== "visiood-response") return;
+
+          clearTimeout(timeout);
+          window.removeEventListener("message", handler);
+          resolve(event.data);
+        }
+
+        window.addEventListener("message", handler);
+
+        // Wait for iframe to load, then send
+        const send = () => {
+          targetWindow.postMessage(
+            { type: "visiood-request", payload },
+            "https://focusIinks.github.io"
+          );
+        };
+
+        if (frame.contentWindow?.document?.readyState === "complete") {
+          send();
+        } else {
+          frame.addEventListener("load", send, { once: true });
+        }
+      });
+    }
+
+    // Expose for generating the encrypted token (run in console):
+    window.encryptToken = encryptToken;
+  </script>
+</body>
+</html>

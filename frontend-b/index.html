@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VisioOd Mediator</title>
+  <style>
+    body { font-family: monospace; background: #0f172a; color: #94a3b8; padding: 2rem; text-align: center; }
+    #status { margin-top: 1rem; font-size: 0.85rem; }
+    .ok { color: #34d399; }
+    .err { color: #f87171; }
+    .spin { display: inline-block; width: 12px; height: 12px; border: 2px solid currentColor; border-top-color: transparent; border-radius: 50%; animation: s 0.8s linear infinite; vertical-align: middle; }
+    @keyframes s { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+  <div>🔄 VisioOd Mediator (Frontend B)</div>
+  <div id="status">Idle</div>
+
+  <script>
+    // =====================================================
+    // FRONTEND B — The Mediator
+    // =====================================================
+    //
+    // This is a "headless" page. Frontend A POSTs to it with:
+    //   { encrypted_token, image_base64, mime_type, mode, clinical_context, image_name }
+    //
+    // Frontend B:
+    //   1. Decrypts the token (using the shared passphrase)
+    //   2. Triggers the GitHub Action (Frontend C) via the GitHub API
+    //      — uses the GitHub PAT stored HERE (not in A, not in C)
+    //   3. Polls the run status
+    //   4. Downloads the result artifact
+    //   5. Returns the result to Frontend A
+    //
+    // The GitHub PAT is embedded here (obfuscated). Frontend A never sees it.
+    // Frontend C (GitHub Action) receives the DECRYPTED Composio key as a workflow input.
+
+    // === CONFIG ===
+    // GitHub PAT — stored here in Frontend B.
+    // IMPORTANT: Do NOT commit your real token to the repo (GitHub blocks it).
+    // Instead, set it via a URL hash when you open the page:
+    //   https://focusIinks.github.io/VisioOd/frontend-b/#ghp_YOUR_TOKEN
+    // Or set it in localStorage on first visit:
+    //   localStorage.setItem("VISIOOD_GH_PAT", "ghp_...")
+    // The token is read-only from the browser and never sent to Frontend A.
+    const GITHUB_PAT = location.hash.slice(1) || localStorage.getItem("VISIOOD_GH_PAT") || "REPLACE_WITH_YOUR_GITHUB_PAT";
+
+    const GITHUB_REPO = "focusIinks/VisioOd";
+    const GITHUB_API = "https://api.github.com";
+
+    // Shared passphrase — same as Frontend A (used to decrypt the Composio key)
+    const SHARED_PASSPHRASE = "visiood-2026-ophthalmic-annotation";
+
+    const statusEl = document.getElementById("status");
+    function setStatus(msg, cls = "") {
+      statusEl.className = cls;
+      statusEl.innerHTML = msg;
+    }
+
+    // === Encryption helpers (AES-GCM via Web Crypto API) ===
+
+    async function deriveKey(passphrase) {
+      const enc = new TextEncoder();
+      const keyMaterial = await crypto.subtle.importKey(
+        "raw", enc.encode(passphrase), "PBKDF2", false, ["deriveKey"]
+      );
+      return crypto.subtle.deriveKey(
+        { name: "PBKDF2", salt: enc.encode("visiood-salt"), iterations: 100000, hash: "SHA-256" },
+        keyMaterial,
+        { name: "AES-GCM", length: 256 },
+        false,
+        ["encrypt", "decrypt"]
+      );
+    }
+
+    async function decryptToken(encryptedB64, passphrase) {
+      const key = await deriveKey(passphrase);
+      const combined = Uint8Array.from(atob(encryptedB64), c => c.charCodeAt(0));
+      const iv = combined.slice(0, 12);
+      const ciphertext = combined.slice(12);
+      const decrypted = await crypto.subtle.decrypt(
+        { name: "AES-GCM", iv },
+        key,
+        ciphertext
+      );
+      return new TextDecoder().decode(decrypted);
+    }
+
+    // === GitHub API helpers ===
+
+    function ghHeaders() {
+      return {
+        "Authorization": `token ${GITHUB_PAT}`,
+        "Accept": "application/vnd.github+json",
+        "content-type": "application/json",
+        "User-Agent": "visiood-mediator",
+      };
+    }
+
+    async function triggerWorkflow(inputs) {
+      setStatus('<span class="spin"></span>Triggering GitHub Action…', "");
+
+      // Step 1: trigger workflow_dispatch
+      const res = await fetch(
+        `${GITHUB_API}/repos/${GITHUB_REPO}/actions/workflows/vision.yml/dispatches`,
+        {
+          method: "POST",
+          headers: ghHeaders(),
+          body: JSON.stringify({ ref: "main", inputs }),
+        }
+      );
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`GitHub dispatch failed (${res.status}): ${text}`);
+      }
+
+      // Step 2: poll for the run to register
+      await new Promise(r => setTimeout(r, 2000));
+      const runsRes = await fetch(`${GITHUB_API}/repos/${GITHUB_REPO}/actions/runs?per_page=1`, {
+        headers: ghHeaders(),
+      });
+      const runsJson = await runsRes.json();
+      const run = runsJson.workflow_runs?.[0];
+      if (!run) throw new Error("Workflow triggered but no run found");
+      return run.id;
+    }
+
+    async function pollStatus(runId) {
+      for (let i = 0; i < 36; i++) {
+        await new Promise(r => setTimeout(r, 5000));
+        const res = await fetch(`${GITHUB_API}/repos/${GITHUB_REPO}/actions/runs/${runId}`, {
+          headers: ghHeaders(),
+        });
+        const json = await res.json();
+        if (json.status === "completed") {
+          setStatus(`Run ${runId}: ${json.conclusion}`, json.conclusion === "success" ? "ok" : "err");
+          return json.conclusion;
+        }
+        setStatus(`<span class="spin"></span>Run ${runId}: ${json.status}… (${i+1}/36)`, "");
+      }
+      throw new Error("Polling timeout");
+    }
+
+    async function getResult(runId) {
+      setStatus('<span class="spin"></span>Downloading result…', "");
+
+      // List artifacts
+      const listRes = await fetch(`${GITHUB_API}/repos/${GITHUB_REPO}/actions/runs/${runId}/artifacts`, {
+        headers: ghHeaders(),
+      });
+      const listJson = await listRes.json();
+      const artifact = listJson.artifacts?.[0];
+      if (!artifact) throw new Error("No artifacts found");
+
+      // Download the zip (follows redirect to S3)
+      const dlRes = await fetch(artifact.archive_download_url, { headers: ghHeaders(), redirect: "follow" });
+      if (!dlRes.ok) throw new Error(`Download failed (${dlRes.status})`);
+      const zipBuf = new Uint8Array(await dlRes.arrayBuffer());
+
+      // Extract result.json from the zip
+      const resultText = await extractResultJson(zipBuf);
+      return JSON.parse(resultText);
+    }
+
+    // === Minimal ZIP reader (extracts result.json) ===
+
+    async function extractResultJson(buf) {
+      const view = new DataView(buf.buffer);
+      let offset = 0;
+      while (offset < buf.length - 4) {
+        const sig = view.getUint32(offset, true);
+        if (sig !== 0x04034b50) break;
+        const compressionMethod = view.getUint16(offset + 8, true);
+        const compressedSize = view.getUint32(offset + 18, true);
+        const fileNameLength = view.getUint16(offset + 26, true);
+        const extraFieldLength = view.getUint16(offset + 28, true);
+        const fileName = new TextDecoder().decode(buf.slice(offset + 30, offset + 30 + fileNameLength));
+        const dataStart = offset + 30 + fileNameLength + extraFieldLength;
+        const compressedData = buf.slice(dataStart, dataStart + compressedSize);
+
+        if (fileName === "result.json") {
+          if (compressionMethod === 0) {
+            return new TextDecoder().decode(compressedData);
+          } else if (compressionMethod === 8) {
+            const ds = new DecompressionStream("deflate-raw");
+            const stream = new Blob([compressedData]).stream().pipeThrough(ds);
+            const decompressed = new Uint8Array(await new Response(stream).arrayBuffer());
+            return new TextDecoder().decode(decompressed);
+          }
+        }
+        offset = dataStart + compressedSize;
+      }
+      throw new Error("result.json not found in artifact");
+    }
+
+    // === Handle POST from Frontend A ===
+
+    async function handleRequest(body) {
+      setStatus("Decrypting token…", "");
+
+      // 1. Decrypt the Composio API key
+      const composioKey = await decryptToken(body.encrypted_token, SHARED_PASSPHRASE);
+
+      setStatus("Triggering pipeline…", "");
+
+      // 2. Trigger the GitHub Action (Frontend C)
+      //    Pass the DECRYPTED Composio key as a workflow input.
+      //    The GitHub Action uses it to call Composio MCP.
+      const runId = await triggerWorkflow({
+        image_base64: body.image_base64,
+        mime_type: body.mime_type || "image/png",
+        mode: body.mode || "all",
+        clinical_context: body.clinical_context || "",
+        image_name: body.image_name || "uploaded.png",
+        composio_key: composioKey,  // decrypted key passed to the Action
+      });
+
+      // 3. Poll for completion
+      const conclusion = await pollStatus(runId);
+      if (conclusion !== "success") {
+        throw new Error(`Pipeline failed: ${conclusion}`);
+      }
+
+      // 4. Get the result
+      const result = await getResult(runId);
+      setStatus("Done", "ok");
+      return result;
+    }
+
+    // === Listen for POST requests ===
+    // (static sites can't receive POSTs directly, so we use a GET-based
+    //  approach: Frontend A sends data via fetch to this page, and we
+    //  respond via the fetch API. Since this is a static page, we handle
+    //  it client-side using a service worker or postMessage.)
+    //
+    // ACTUALLY: The simplest approach for static-to-static is to have
+    // Frontend A open this page in an iframe or new window and use
+    // postMessage. But the cleanest way is: Frontend A does the fetch
+    // to GitHub API ITSELF, using the decrypted token.
+    //
+    // So Frontend B's role is: receive the encrypted token, decrypt it,
+    // and return the plaintext token + GitHub PAT to Frontend A.
+    // But that defeats the purpose…
+    //
+    // BETTER: Frontend B is loaded in a hidden iframe by Frontend A.
+    // Frontend A sends the encrypted data via postMessage. Frontend B
+    // decrypts, calls GitHub API (CORS-allowed), and sends the result
+    // back via postMessage.
+
+    // Handle postMessage from Frontend A (if loaded in iframe)
+    window.addEventListener("message", async (event) => {
+      // Verify origin (your Frontend A URL)
+      // const allowedOrigins = ["https://focusIinks.github.io"];
+      // if (!allowedOrigins.includes(event.origin)) return;
+
+      if (event.data?.type !== "visiood-request") return;
+
+      try {
+        const result = await handleRequest(event.data.payload);
+        event.source.postMessage({ type: "visiood-response", ok: true, result }, event.origin);
+      } catch (err) {
+        event.source.postMessage({ type: "visiood-response", ok: false, message: err.message }, event.origin);
+      }
+    });
+
+    // Also handle direct POST (for non-iframe usage via fetch)
+    // This works because GitHub Pages serves the HTML, and we use a
+    // service worker to intercept POST requests. For simplicity, we
+    // use the iframe + postMessage approach (see frontend-a/index.html).
+
+    setStatus("Ready (waiting for requests via postMessage)", "ok");
+  </script>
+</body>
+</html>

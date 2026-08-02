@@ -1,154 +1,105 @@
 # 👁️ VisioOd API
 
-**AI-Powered Ophthalmic Annotation & Differential Diagnosis API**
+**AI-Powered Ophthalmic Annotation & Differential Diagnosis**
 
-A serverless API architecture where a **static frontend** calls a **Cloudflare Worker mediator**, which securely triggers **GitHub Actions workers** that talk to **Composio MCP** (Gemini Nano Banana) to validate, annotate, and diagnose ocular images.
+A 3-tier architecture where **Frontend A** (your app) sends an encrypted token + image to **Frontend B** (mediator), which decrypts the token and triggers **Frontend C** (GitHub Action) that calls Composio MCP (Gemini Nano Banana).
 
-## Architecture
+## Architecture (A → B → C)
 
 ```
-Static Frontend (GitHub Pages)
-    │  POST /vision { image_base64, mode, ... }
-    │  (no tokens — just the mediator URL)
-    ▼
-Cloudflare Worker (Mediator)
-    │  holds GITHUB_TOKEN + COMPOSIO_API_KEY as secrets
-    │  triggers workflow_dispatch
-    ▼
-GitHub Actions (VisioOd repo)
-    │  runs vision.js worker
-    │  calls Composio MCP → Gemini Nano Banana
-    │  uploads result.json artifact
-    ▼
-Cloudflare Worker downloads artifact → returns result to frontend
+┌─────────────┐        ┌─────────────────┐        ┌──────────────────┐
+│ Frontend A  │        │   Frontend B    │        │   Frontend C     │
+│ (your app)  │        │  (mediator)     │        │ (GitHub Action)  │
+│             │        │                 │        │                  │
+│ - User UI   │ postMsg │ - Decrypts key │  API   │ - Calls Composio │
+│ - Encrypts  │ ──────▶ │ - Has GitHub   │ ─────▶ │   MCP (Gemini)   │
+│   Composio  │        │   PAT (hidden)  │        │ - Runs pipeline  │
+│   key       │        │ - Triggers C    │        │ - Returns result │
+│             │        │ - Polls result  │        │                  │
+└─────────────┘        └─────────────────┘        └──────────────────┘
+      │                         │                         │
+      │         result          │  artifact download      │
+      ◀─────────────────────────◀─────────────────────────│
 ```
 
-**No tokens are ever exposed to the browser.** The frontend only knows the mediator URL.
+### What each part holds
+
+| Component | Has | Exposed to user? |
+|-----------|-----|------------------|
+| **Frontend A** | Shared passphrase + encrypted Composio key | ✅ Public (static site) |
+| **Frontend B** | GitHub PAT (obfuscated) + shared passphrase | ✅ Public (static site) |
+| **Frontend C** | Decrypted Composio key (passed as input, in-memory only) | ❌ Runs on GitHub Actions |
+
+**The real Composio key is encrypted in A, decrypted in B, passed to C as a workflow input.** The GitHub PAT lives only in B. Neither token appears in plaintext in network traffic between A and B.
 
 ## Quick Start
 
-### 1. Deploy the Mediator (Cloudflare Worker)
+### 1. Deploy Frontend B (mediator)
 
-```bash
-cd worker
-npm install
+Push `frontend-b/index.html` to GitHub Pages (or any static host). It's already in this repo at `frontend-b/`.
 
-# Set secrets (one-time)
-npx wrangler secret put GITHUB_TOKEN        # your GitHub PAT (repo+workflow scope)
-npx wrangler secret put COMPOSIO_API_KEY    # your Composio key (ck_...)
-npx wrangler secret put API_KEY             # optional: shared secret for frontend auth
-
-# Deploy
-npx wrangler deploy
+If using GitHub Pages, enable it in **Settings → Pages → Source: main branch / root**. Your URL will be:
+```
+https://focusIinks.github.io/VisioOd/frontend-b/
 ```
 
-You'll get a URL like: `https://visiood-mediator.your-subdomain.workers.dev`
+### 2. Deploy Frontend A (your app)
 
-### 2. Deploy the Static Frontend (GitHub Pages)
+`frontend-a/index.html` is a complete example. To use it:
 
-The frontend is in `frontend/index.html`. To deploy:
+1. Open `frontend-a/index.html` in your browser
+2. Open the browser console and generate the encrypted token:
+   ```js
+   await window.encryptToken("ck_yVuv7G4i6PxmqI5xNVA_")
+   ```
+3. Copy the output and paste it into the `ENCRYPTED_TOKEN` constant in `frontend-a/index.html`
+4. Update the `mediatorFrame` `src` to point to your Frontend B URL
+5. Deploy to any static host
 
-1. Edit `frontend/index.html` — set `MEDIATOR_URL` to your worker URL (and `API_KEY` if you set one)
-2. Push to the `docs/` folder (or enable GitHub Pages on the repo)
-3. Your frontend is live at `https://focusIinks.github.io/VisioOd/`
+### 3. Use it
 
-### 3. Use It
+Open Frontend A → upload ocular image → click **Analyze**. The flow:
 
-Open the frontend URL, upload an ocular image, click **Analyze Image**. The pipeline:
-1. **Validate** — checks if the image is ocular
-2. **Annotate** — overlays clinical findings (red/yellow/green markers)
-3. **Diagnose** — generates a structured differential diagnosis report
-
-## API Reference (Mediator Endpoints)
-
-### `POST /vision` — Trigger Annotation Pipeline
-
-```bash
-curl -X POST https://visiood-mediator.YOUR-SUBDOMAIN.workers.dev/vision \
-  -H "content-type: application/json" \
-  -H "Authorization: Bearer YOUR_API_KEY" \
-  -d '{
-    "image_base64": "...",
-    "mime_type": "image/png",
-    "mode": "all",
-    "clinical_context": "45yo male, redness OD",
-    "image_name": "eye.jpg"
-  }'
-```
-
-**Response:** `{ "ok": true, "runId": 12345678 }`
-
-### `GET /status?runId=X` — Poll Run Status
-
-```bash
-curl "https://visiood-mediator.YOUR-SUBDOMAIN.workers.dev/status?runId=12345678" \
-  -H "Authorization: Bearer YOUR_API_KEY"
-```
-
-**Response:** `{ "ok": true, "status": "completed", "conclusion": "success" }`
-
-### `GET /result?runId=X` — Get Result
-
-```bash
-curl "https://visiood-mediator.YOUR-SUBDOMAIN.workers.dev/result?runId=12345678" \
-  -H "Authorization: Bearer YOUR_API_KEY"
-```
-
-**Response:**
-```json
-{
-  "ok": true,
-  "result": {
-    "success": true,
-    "steps": {
-      "validation": { "isOcular": true, "message": "Ocular image confirmed." },
-      "annotation": { "imageUrl": "https://temp...r2.cloudflarestorage.com/..." },
-      "diagnosis": { "text": "1) Image quality assessment..." }
-    }
-  }
-}
-```
+1. **A** encrypts the Composio key (AES-GCM with shared passphrase)
+2. **A** sends `{ encrypted_token, image_base64, ... }` to **B** via `postMessage` (hidden iframe)
+3. **B** decrypts the token using the shared passphrase
+4. **B** triggers the GitHub Action (**C**) via the GitHub API (using the embedded PAT)
+5. **C** receives the decrypted Composio key as a workflow input, calls Composio MCP → Gemini
+6. **C** uploads the result as an artifact
+7. **B** polls for completion, downloads the artifact, extracts `result.json`
+8. **B** sends the result back to **A** via `postMessage`
+9. **A** displays the annotated image + diagnosis
 
 ## Project Structure
 
 ```
 VisioOd/
-├── worker/                # Cloudflare Worker (mediator)
-│   ├── index.js           # Worker code (handles /vision, /status, /result)
-│   ├── wrangler.toml      # Cloudflare config
-│   └── package.json
-├── frontend/              # Static frontend (GitHub Pages)
-│   └── index.html         # Pure HTML/JS — no build step
+├── frontend-a/           # Frontend A — your app (static HTML)
+│   └── index.html        # Encrypts token, sends to B via postMessage
+├── frontend-b/           # Frontend B — mediator (static HTML)
+│   └── index.html        # Decrypts token, calls GitHub API, returns result
 ├── .github/workflows/
-│   ├── vision.yml         # /vision GitHub Actions worker
-│   ├── tools.yml          # /tools GitHub Actions worker
-│   └── docs.yml           # Deploys docs to GitHub Pages
-├── src/                   # Worker scripts (run inside GitHub Actions)
-│   ├── mcp-client.js      # Composio MCP client
-│   ├── vision.js          # Annotation pipeline
-│   ├── tools.js           # Tools lister
-│   └── prompts.js         # Clinical prompts
-├── docs/                  # API documentation website
+│   └── vision.yml        # Frontend C — GitHub Action (calls Composio MCP)
+├── src/                  # Worker scripts (run inside GitHub Actions)
+│   ├── mcp-client.js     # Composio MCP client
+│   ├── vision.js         # Annotation pipeline
+│   └── prompts.js        # Clinical prompts
 └── README.md
 ```
 
-## Security Model
+## Security Notes
 
-| Component | Has Access To | Exposed to Browser? |
-|-----------|--------------|---------------------|
-| Static Frontend | Mediator URL only | ✅ (safe) |
-| Cloudflare Worker | GITHUB_TOKEN, COMPOSIO_API_KEY | ❌ (secrets) |
-| GitHub Actions | COMPOSIO_API_KEY (repo secret) | ❌ (secrets) |
-| Composio MCP | Your Composio account | ❌ (server-side only) |
+- **Shared passphrase** (`visiood-2026-ophthalmic-annotation`) — used for AES-GCM encryption. Must be the same in A and B. Change it to your own.
+- **GitHub PAT** — embedded in Frontend B (base64-obfuscated). Anyone can decode it, so use a **fine-grained PAT** with only `actions:write` on the VisioOd repo.
+- **Composio key** — encrypted in A, decrypted in B, passed to C. Never appears in plaintext between A and B.
+- **No server** — everything runs in the browser (A and B) and GitHub Actions (C).
 
-**The frontend never sees any token.** It only calls the mediator URL. The mediator uses its server-side secrets to trigger GitHub Actions and download results.
+## Customizing
 
-## Adding New Endpoints
-
-1. Add a worker script in `src/` (e.g., `src/screening.js`)
-2. Add a workflow in `.github/workflows/` (e.g., `screening.yml`)
-3. Add a route in `worker/index.js` (e.g., `POST /screening`)
-4. Document it in `docs/index.html`
+- **Change the passphrase**: Update `SHARED_PASSPHRASE` in both `frontend-a/index.html` and `frontend-b/index.html`
+- **Change the GitHub PAT**: Update the `GITHUB_PAT` line in `frontend-b/index.html` (base64-encode your new PAT)
+- **Change the repo**: Update `GITHUB_REPO` in `frontend-b/index.html`
+- **Add endpoints**: Add new workflows in `.github/workflows/` and handle them in `frontend-b/index.html`
 
 ## License
 
