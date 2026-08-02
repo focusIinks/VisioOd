@@ -1,0 +1,6 @@
+node_modules/
+*.log
+.env
+.env.local
+result.json
+tools.json

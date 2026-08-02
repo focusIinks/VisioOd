@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VisioOd API — Ophthalmic Annotation</title>
+  <style>
+    :root {
+      --teal: #0d9488;
+      --teal-dark: #0f766e;
+      --slate-50: #f8fafc;
+      --slate-100: #f1f5f9;
+      --slate-200: #e2e8f0;
+      --slate-600: #475569;
+      --slate-800: #1e293b;
+      --slate-900: #0f172a;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--slate-50);
+      color: var(--slate-900);
+      line-height: 1.6;
+    }
+    header {
+      background: linear-gradient(135deg, var(--teal) 0%, var(--teal-dark) 100%);
+      color: white;
+      padding: 3rem 1.5rem;
+      text-align: center;
+    }
+    header h1 { font-size: 2.5rem; font-weight: 800; margin-bottom: 0.5rem; }
+    header p { font-size: 1.1rem; opacity: 0.9; max-width: 600px; margin: 0 auto; }
+    .badge {
+      display: inline-block;
+      background: rgba(255,255,255,0.2);
+      padding: 0.25rem 0.75rem;
+      border-radius: 999px;
+      font-size: 0.8rem;
+      margin-top: 1rem;
+    }
+    main { max-width: 900px; margin: 0 auto; padding: 2rem 1.5rem; }
+    section { margin-bottom: 3rem; }
+    h2 { font-size: 1.5rem; margin-bottom: 1rem; color: var(--slate-800); border-bottom: 2px solid var(--teal); padding-bottom: 0.5rem; }
+    h3 { font-size: 1.15rem; margin: 1.5rem 0 0.5rem; color: var(--slate-800); }
+    p { margin-bottom: 0.75rem; color: var(--slate-600); }
+    code {
+      background: var(--slate-100);
+      padding: 0.15rem 0.4rem;
+      border-radius: 4px;
+      font-family: 'SF Mono', Monaco, Consolas, monospace;
+      font-size: 0.875rem;
+      color: var(--teal-dark);
+    }
+    pre {
+      background: var(--slate-900);
+      color: #e2e8f0;
+      padding: 1.25rem;
+      border-radius: 8px;
+      overflow-x: auto;
+      margin: 1rem 0;
+      font-size: 0.85rem;
+      line-height: 1.5;
+    }
+    pre code { background: none; color: inherit; padding: 0; }
+    .endpoint {
+      background: white;
+      border: 1px solid var(--slate-200);
+      border-radius: 12px;
+      padding: 1.5rem;
+      margin-bottom: 1.5rem;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    }
+    .method {
+      display: inline-block;
+      padding: 0.25rem 0.75rem;
+      border-radius: 6px;
+      font-size: 0.75rem;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      margin-right: 0.5rem;
+    }
+    .method-post { background: #dbeafe; color: #1e40af; }
+    .method-get { background: #dcfce7; color: #166534; }
+    .path { font-family: monospace; font-size: 1rem; font-weight: 600; color: var(--slate-800); }
+    table { width: 100%; border-collapse: collapse; margin: 1rem 0; }
+    th, td { text-align: left; padding: 0.5rem; border-bottom: 1px solid var(--slate-200); font-size: 0.875rem; }
+    th { background: var(--slate-100); font-weight: 600; }
+    .note { background: #fef3c7; border-left: 4px solid #f59e0b; padding: 1rem; border-radius: 4px; margin: 1rem 0; font-size: 0.875rem; }
+    footer { text-align: center; padding: 2rem; color: var(--slate-600); font-size: 0.85rem; border-top: 1px solid var(--slate-200); margin-top: 2rem; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>👁️ VisioOd API</h1>
+    <p>AI-Powered Ophthalmic Annotation & Differential Diagnosis API</p>
+    <div class="badge">Powered by Composio MCP · Gemini Nano Banana</div>
+  </header>
+
+  <main>
+    <section>
+      <h2>Overview</h2>
+      <p>VisioOd is a serverless API for ophthalmic image analysis. It runs entirely on <strong>GitHub Actions</strong> — each endpoint is a workflow that talks to the Composio MCP server to validate, annotate, and diagnose ocular images using Google's Gemini Nano Banana model.</p>
+      <p>Your frontend stays separate. It calls this API via the GitHub REST API, triggers a workflow, and polls for the result.</p>
+      <div class="note">
+        <strong>Architecture:</strong> Frontend → GitHub Actions API (trigger workflow) → VisioOd worker → Composio MCP → Gemini → Result artifact
+      </div>
+    </section>
+
+    <section>
+      <h2>Authentication</h2>
+      <p>All requests use a GitHub Personal Access Token (PAT) with <code>repo</code> and <code>workflow</code> scopes.</p>
+      <pre><code>Authorization: token ghp_YOUR_GITHUB_TOKEN
+Accept: application/vnd.github+json</code></pre>
+      <p>The Composio API key is stored as a repository secret: <code>COMPOSIO_API_KEY</code>. Set it in <strong>Settings → Secrets and variables → Actions</strong>.</p>
+    </section>
+
+    <section>
+      <h2>Endpoints</h2>
+
+      <div class="endpoint">
+        <span class="method method-post">POST</span>
+        <span class="path">/vision</span>
+        <p style="margin-top: 0.75rem;">Run the ophthalmic annotation pipeline on an uploaded image.</p>
+
+        <h3>Trigger the workflow</h3>
+        <pre><code>POST https://api.github.com/repos/focusIinks/VisioOd/actions/workflows/vision.yml/dispatches
+
+{
+  "ref": "main",
+  "inputs": {
+    "image_base64": "&lt;base64-encoded image, no data: prefix&gt;",
+    "mime_type": "image/png",
+    "mode": "all",
+    "clinical_context": "45yo male, 3-day redness OD",
+    "image_name": "eye_photo.jpg"
+  }
+}</code></pre>
+
+        <h3>Inputs</h3>
+        <table>
+          <thead><tr><th>Parameter</th><th>Type</th><th>Required</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>image_base64</code></td><td>string</td><td>Yes</td><td>Base64-encoded image (no <code>data:</code> prefix)</td></tr>
+            <tr><td><code>mime_type</code></td><td>string</td><td>No</td><td><code>image/png</code> (default), <code>image/jpeg</code>, <code>image/webp</code></td></tr>
+            <tr><td><code>mode</code></td><td>string</td><td>No</td><td><code>all</code> (default), <code>validate</code>, <code>annotate</code>, <code>diagnose</code></td></tr>
+            <tr><td><code>clinical_context</code></td><td>string</td><td>No</td><td>Patient history, symptoms, prior findings</td></tr>
+            <tr><td><code>image_name</code></td><td>string</td><td>No</td><td>Filename for reference</td></tr>
+          </tbody>
+        </table>
+
+        <h3>Pipeline steps (mode: "all")</h3>
+        <ol>
+          <li><strong>Validate</strong> — checks if the image is ocular. Stops if not.</li>
+          <li><strong>Annotate</strong> — overlays clinical findings (red/yellow/green) on the original image</li>
+          <li><strong>Diagnose</strong> — generates a structured text report with differential diagnoses</li>
+        </ol>
+
+        <h3>Get the result</h3>
+        <pre><code># Find the latest run
+GET https://api.github.com/repos/focusIinks/VisioOd/actions/runs?per_page=1
+
+# Download the result artifact
+GET https://api.github.com/repos/focusIinks/VisioOd/actions/runs/{run_id}/artifacts
+
+# Or via the GitHub API zip download endpoint</code></pre>
+        <p>The result JSON contains: <code>steps.validation</code>, <code>steps.annotation</code> (with image URL), <code>steps.diagnosis</code> (with text report).</p>
+      </div>
+
+      <div class="endpoint">
+        <span class="method method-post">POST</span>
+        <span class="path">/tools</span>
+        <p style="margin-top: 0.75rem;">List all available Composio MCP tools for the configured API key.</p>
+        <pre><code>POST https://api.github.com/repos/focusIinks/VisioOd/actions/workflows/tools.yml/dispatches
+
+{
+  "ref": "main",
+  "inputs": {}
+}</code></pre>
+      </div>
+
+      <div class="endpoint">
+        <span class="method method-get">GET</span>
+        <span class="path">/runs/{run_id}</span>
+        <p style="margin-top: 0.75rem;">Check the status of a workflow run and download its result artifact.</p>
+        <pre><code>GET https://api.github.com/repos/focusIinks/VisioOd/actions/runs/{run_id}
+
+# Response includes "status" (queued/in_progress/completed) and "conclusion" (success/failure)</code></pre>
+      </div>
+    </section>
+
+    <section>
+      <h2>Example: Full Flow</h2>
+      <pre><code># 1. Trigger the vision pipeline
+curl -X POST \
+  -H "Authorization: token ghp_YOUR_TOKEN" \
+  -H "Accept: application/vnd.github+json" \
+  https://api.github.com/repos/focusIinks/VisioOd/actions/workflows/vision.yml/dispatches \
+  -d '{
+    "ref": "main",
+    "inputs": {
+      "image_base64": "'"$(base64 -w0 eye.jpg)"'",
+      "mime_type": "image/jpeg",
+      "mode": "all",
+      "clinical_context": "Redness and discharge OD for 3 days"
+    }
+  }'
+
+# 2. Poll for the run status
+curl -s \
+  -H "Authorization: token ghp_YOUR_TOKEN" \
+  https://api.github.com/repos/focusIinks/VisioOd/actions/runs?per_page=1 \
+  | jq '.workflow_runs[0] | {id, status, conclusion}'
+
+# 3. Download the result artifact (once status is "completed")
+curl -s \
+  -H "Authorization: token ghp_YOUR_TOKEN" \
+  https://api.github.com/repos/focusIinks/VisioOd/actions/runs/{RUN_ID}/artifacts \
+  | jq '.artifacts[0]'</code></pre>
+    </section>
+
+    <section>
+      <h2>Adding New Endpoints</h2>
+      <p>To add a new API endpoint, create a new workflow file in <code>.github/workflows/</code> and a corresponding worker script in <code>src/</code>. The pattern is:</p>
+      <ol>
+        <li>Create <code>src/your-endpoint.js</code> — uses <code>ComposioMcpClient</code> to call MCP tools</li>
+        <li>Create <code>.github/workflows/your-endpoint.yml</code> — triggers on <code>workflow_dispatch</code>, runs the script, uploads result</li>
+        <li>Document it in this page and the README</li>
+      </ol>
+    </section>
+  </main>
+
+  <footer>
+    VisioOd API · <a href="https://github.com/focusIinks/VisioOd">github.com/focusIinks/VisioOd</a> · MIT License
+  </footer>
+</body>
+</html>

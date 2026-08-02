@@ -1,0 +1,82 @@
+name: Vision API
+run-name: "Vision: ${{ inputs.mode }} — ${{ inputs.image_name || 'image' }}"
+
+# /vision endpoint — triggered via GitHub Actions workflow_dispatch API.
+#
+# Runs the 3-step ophthalmic annotation pipeline:
+#   validate → annotate → diagnose
+#
+# Usage:
+#   POST https://api.github.com/repos/${{ github.repository_owner }}/VisioOd/actions/workflows/vision.yml/dispatches
+#   Headers: Authorization: token <GITHUB_PAT>, Accept: application/vnd.github+json
+#   Body: { "ref": "main", "inputs": { "image_base64": "...", "mime_type": "image/png", "mode": "all" } }
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_base64:
+        description: "Base64-encoded image (no data: prefix)"
+        required: true
+      mime_type:
+        description: "Image MIME type (image/png, image/jpeg, image/webp)"
+        required: false
+        default: "image/png"
+      mode:
+        description: "Pipeline mode: all | validate | annotate | diagnose"
+        required: false
+        default: "all"
+      clinical_context:
+        description: "Optional clinical context (history, symptoms, etc.)"
+        required: false
+        default: ""
+      image_name:
+        description: "Image filename (for reference)"
+        required: false
+        default: "uploaded.png"
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  vision:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Run vision pipeline
+        env:
+          COMPOSIO_API_KEY: ${{ secrets.COMPOSIO_API_KEY }}
+        run: |
+          node src/vision.js \
+            --image-base64 "${{ inputs.image_base64 }}" \
+            --mime-type "${{ inputs.mime_type }}" \
+            --mode "${{ inputs.mode }}" \
+            --clinical-context "${{ inputs.clinical_context }}" \
+            --name "${{ inputs.image_name }}" \
+            --output result.json
+
+      - name: Upload result artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: vision-result-${{ github.run_id }}
+          path: result.json
+          retention-days: 30
+
+      - name: Output run ID
+        run: |
+          echo "::notice::Vision pipeline complete. Run ID: ${{ github.run_id }}"
+          echo "::notice::Download result: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          echo ""
+          echo "=== RESULT ==="
+          cat result.json | head -50

@@ -1,0 +1,50 @@
+name: Tools API
+run-name: "Tools: list Composio MCP tools"
+
+# /tools endpoint — lists all available Composio MCP tools.
+#
+# Usage:
+#   POST https://api.github.com/repos/${{ github.repository_owner }}/VisioOd/actions/workflows/tools.yml/dispatches
+#   Body: { "ref": "main", "inputs": {} }
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  tools:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: List Composio tools
+        env:
+          COMPOSIO_API_KEY: ${{ secrets.COMPOSIO_API_KEY }}
+        run: node src/tools.js --output tools.json
+
+      - name: Upload tools artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tools-${{ github.run_id }}
+          path: tools.json
+          retention-days: 7
+
+      - name: Output
+        run: |
+          echo "::notice::Found tools. Run ID: ${{ github.run_id }}"
+          echo ""
+          echo "=== TOOLS ==="
+          cat tools.json | head -30
