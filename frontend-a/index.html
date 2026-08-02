@@ -84,7 +84,7 @@
 
   <!-- Hidden iframe loads Frontend B (the mediator). We send encrypted data
        to it via postMessage, and it returns the result. -->
-  <iframe id="mediatorFrame" src="https://focusIinks.github.io/VisioOd/frontend-b/"></iframe>
+  <iframe id="mediatorFrame" src="../frontend-b/"></iframe>
 
   <script>
     // =====================================================
@@ -244,7 +244,8 @@
 
         function handler(event) {
           // Verify origin (must match Frontend B's URL)
-          if (event.origin !== "https://focusIinks.github.io") return;
+          // Accept postMessage from same origin (works on any host)
+      if (event.origin !== window.location.origin) return;
           if (event.data?.type !== "visiood-response") return;
 
           clearTimeout(timeout);
@@ -258,7 +259,7 @@
         const send = () => {
           targetWindow.postMessage(
             { type: "visiood-request", payload },
-            "https://focusIinks.github.io"
+            window.location.origin
           );
         };
 

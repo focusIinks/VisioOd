@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VisioOd — Ophthalmic Annotation API</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f172a; color: #e2e8f0; line-height: 1.6; min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 2rem; }
+    .container { max-width: 600px; text-align: center; }
+    .logo { font-size: 3rem; margin-bottom: 1rem; }
+    h1 { font-size: 2rem; margin-bottom: 0.5rem; color: #14b8a6; }
+    p { color: #94a3b8; margin-bottom: 1.5rem; font-size: 0.95rem; }
+    .links { display: flex; flex-direction: column; gap: 0.75rem; }
+    a { display: block; padding: 0.9rem 1.5rem; border-radius: 10px; text-decoration: none; font-weight: 600; transition: transform 0.15s; }
+    a:hover { transform: translateY(-2px); }
+    .primary { background: #0d9488; color: white; }
+    .secondary { background: #1e293b; color: #e2e8f0; border: 1px solid #334155; }
+    .setup { margin-top: 2rem; padding: 1.25rem; background: #1e293b; border-radius: 10px; text-align: left; font-size: 0.8rem; color: #94a3b8; }
+    .setup h3 { color: #14b8a6; margin-bottom: 0.5rem; font-size: 0.9rem; }
+    .setup code { background: #0f172a; padding: 0.15rem 0.4rem; border-radius: 4px; color: #f59e0b; font-size: 0.75rem; }
+    .setup ol { margin-left: 1.25rem; margin-top: 0.5rem; }
+    .setup li { margin-bottom: 0.4rem; }
+    footer { margin-top: 2rem; font-size: 0.75rem; color: #475569; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="logo">👁️</div>
+    <h1>VisioOd</h1>
+    <p>AI-Powered Ophthalmic Annotation &amp; Differential Diagnosis<br>via Composio MCP + Gemini Nano Banana</p>
+
+    <div class="links">
+      <a class="primary" href="./frontend-a/">🚀 Launch OcuAnnotate Pro</a>
+      <a class="secondary" href="https://github.com/focusIinks/VisioOd">📦 View Source on GitHub</a>
+    </div>
+
+    <div class="setup">
+      <h3>📋 First-time Setup</h3>
+      <ol>
+        <li>Open <a href="./frontend-b/" style="color:#14b8a6;">Frontend B (mediator)</a> in a new tab</li>
+        <li>Set your GitHub PAT: open browser console and run<br>
+          <code>localStorage.setItem("VISIOOD_GH_PAT", "ghp_YOUR_TOKEN")</code></li>
+        <li>Return to <a href="./frontend-a/" style="color:#14b8a6;">Frontend A</a> and start analyzing</li>
+      </ol>
+    </div>
+
+    <footer>VisioOd API · <a href="https://github.com/focusIinks/VisioOd" style="color:#475569;">github.com/focusIinks/VisioOd</a></footer>
+  </div>
+</body>
+</html>
