@@ -4,3 +4,4 @@ node_modules/
 .env.local
 result.json
 tools.json
+node_modules/

@@ -8,7 +8,9 @@
     "tools": "node src/tools.js"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.30.0"
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "libsodium-wrappers": "^0.8.4",
+    "tweetsodium": "^0.0.6"
   },
   "engines": {
     "node": ">=18"
