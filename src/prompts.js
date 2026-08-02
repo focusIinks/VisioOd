@@ -50,8 +50,10 @@ The output must be a single annotated image. Return only the image.`;
 
 export function annotationPrompt(clinicalContext) {
   const base = "Annotate this ocular image with clinical findings. Mark all visible pathological areas with colored overlays and labels.";
-  if (clinicalContext && clinicalContext.trim()) {
-    return `${base}\n\nAdditional clinical context from the provider: ${clinicalContext.trim()}`;
+  // Guard against non-string inputs (GitHub Actions may pass `true` for empty inputs)
+  const ctx = typeof clinicalContext === "string" ? clinicalContext.trim() : "";
+  if (ctx) {
+    return `${base}\n\nAdditional clinical context from the provider: ${ctx}`;
   }
   return base;
 }

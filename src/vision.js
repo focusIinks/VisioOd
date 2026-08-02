@@ -72,7 +72,7 @@ async function main() {
   const imageBase64 = opts["image-base64"];
   const mimeType = opts["mime-type"] || "image/png";
   const mode = opts["mode"] || "all"; // validate | annotate | diagnose | all
-  const clinicalContext = opts["clinical-context"] || "";
+  const clinicalContext = typeof opts["clinical-context"] === "string" ? opts["clinical-context"] : "";
   const outputFile = opts["output"] || "result.json";
 
   if (!apiKey) {
