@@ -115,6 +115,9 @@ async function main() {
   };
 
   const imageInput = { base64: imageBase64, mimeType };
+  // Nano Banana Pro supports up to 14 reference images via 'reference_images' param.
+  // Also pass 'images' as fallback (both are accepted by Composio's tool wrapper).
+  const imageParams = { reference_images: [imageInput], images: [imageInput] };
 
   // ---- Step 1: Validation ----
   if (mode === "all" || mode === "validate") {
@@ -125,7 +128,7 @@ async function main() {
       system_instruction: VALIDATION_SYSTEM,
       image_size: "1K",
       aspect_ratio: "1:1",
-      images: [imageInput],
+      ...imageParams,
     });
     const isOcular = v.ok && v.imageUrls.length > 0 && !v.isError;
     result.steps.validation = {
@@ -154,7 +157,7 @@ async function main() {
       system_instruction: ANNOTATION_SYSTEM,
       image_size: "2K",
       aspect_ratio: "1:1",
-      images: [imageInput],
+      ...imageParams,
     });
     result.steps.annotation = {
       imageUrl: a.imageUrls[0],
@@ -172,7 +175,7 @@ async function main() {
       system_instruction: DIAGNOSIS_SYSTEM,
       image_size: "1K",
       aspect_ratio: "1:1",
-      images: [imageInput],
+      ...imageParams,
     });
     const diagnosisText = extractText(d.raw ?? d.text);
     result.steps.diagnosis = {
