@@ -114,14 +114,29 @@ export function extractImageUrls(val) {
   return urls;
 }
 
-/** Extract clinical text from a deeply-nested Gemini diagnosis result. */
+/** Extract clinical text from a deeply-nested Gemini diagnosis result.
+ *
+ *  When GEMINI_GENERATE_IMAGE is asked to return text (diagnosis), Composio
+ *  marks it as an error ("No image data was found... Model's text response
+ *  (truncated): <actual report>"). We dig through the nested JSON to find
+ *  the actual clinical report text.
+ */
 export function extractText(raw) {
   const found = [];
   const visit = (val, depth = 0) => {
     if (!val || depth > 12) return;
     if (typeof val === "string") {
       const t = val.trim();
+      // If it's JSON, parse and recurse
       if (t.startsWith("{") || t.startsWith("[")) { try { visit(JSON.parse(t), depth + 1); return; } catch {} }
+      // Extract the clinical report from "Model's text response (truncated): ..."
+      const marker = "Model's text response (truncated): ";
+      const markerIdx = t.indexOf(marker);
+      if (markerIdx !== -1) {
+        const report = t.slice(markerIdx + marker.length).trim();
+        if (report.length > 30) found.push(report);
+      }
+      // Also match direct clinical text
       if (t.length > 80 && /^(image quality|anatomical|notable|differential|recommended|disclaimer|clinical|report|findings|assessment|structures|based on)/im.test(t)) found.push(t);
       return;
     }
