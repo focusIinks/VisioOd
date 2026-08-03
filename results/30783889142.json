@@ -1,0 +1,15 @@
+{
+  "mode": "all",
+  "imageName": "1000294523.jpg",
+  "mimeType": "image/jpeg",
+  "startedAt": "2026-08-03T04:15:34.321Z",
+  "steps": {
+    "validation": {
+      "isOcular": false,
+      "message": "{\"data\":{\"results\":[{\"response\":{\"successful\":false,\"data\":{\"message\":\"No content parts returned by the model. Finish reason: OTHER. This is often a transient API issue. The image generation service may be temporarily unable to process the request. Suggestions: (1) Retry the request, (2) Try simplifying the prompt, (3) Avoid prompts that might trigger content filters (e.g., containing people, logos, or brand references).\",\"status_code\":200},\"error\":\"No content parts returned by the model. Finish"
+    }
+  },
+  "completedAt": "2026-08-03T04:15:50.059Z",
+  "success": false,
+  "reason": "non-ocular"
+}
