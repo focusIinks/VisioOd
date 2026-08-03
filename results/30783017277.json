@@ -1,0 +1,22 @@
+{
+  "mode": "all",
+  "imageName": "1000294523.jpg",
+  "mimeType": "image/jpeg",
+  "startedAt": "2026-08-03T03:55:54.892Z",
+  "steps": {
+    "validation": {
+      "isOcular": true,
+      "message": "Ocular image confirmed.",
+      "imageUrl": "https://temp.4d4f16c61d89ec64e760039c4ec50717.r2.cloudflarestorage.com/938750/gemini/GEMINI_GENERATE_IMAGE/response/ec56a963c0009c8d0e9edf64483415b1?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=7685aa30fee07632b83ea58979a398d0%2F20260803%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20260803T035611Z&X-Amz-Expires=3600&X-Amz-Signature=0b268a430ae0d1ae701676532d7540d5771bbfc1c2863eb5240b5be69f8b5e64&X-Amz-SignedHeaders=host"
+    },
+    "annotation": {
+      "imageUrl": "https://temp.4d4f16c61d89ec64e760039c4ec50717.r2.cloudflarestorage.com/938750/gemini/GEMINI_GENERATE_IMAGE/response/cda4d33dcf921e85348e38583290cc93?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=7685aa30fee07632b83ea58979a398d0%2F20260803%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20260803T035634Z&X-Amz-Expires=3600&X-Amz-Signature=92f694cc6c54c50ada5237abc5d6b97780064024260c8d2b064ec1d265570310&X-Amz-SignedHeaders=host"
+    },
+    "diagnosis": {
+      "text": "{\n  \"content\": [\n    {\n      \"type\": \"text\",\n      \"text\": \"{\\\"data\\\":{\\\"results\\\":[{\\\"response\\\":{\\\"successful\\\":false,\\\"data\\\":{\\\"message\\\":\\\"No image data was found in the API response. Finish reason: STOP. The model returned text instead of an image. This can happen with the gemini-3-pro-image-preview model when the prompt is interpreted as a text request. Try rephrasing your prompt to clearly describe the visual content you want generated. Model's text response (truncated): Based on the fundus photograph provided, here is a structured clinical report:\\\\n\\\\n**1) Image Quality Assessment**\\\\nThe image is a non-stereoscopic, color fundus photograph of the optic disc and surroundi... \\\",\\\"status_code\\\":200},\\\"error\\\":\\\"No image data was found in the API response. Finish reason: STOP. The model returned text instead of an image. This can happen with the gemini-3-pro-image-preview model when the prompt is interpreted as a text request. Try rephrasing your prompt to clearly describe the visual content you want generated. Model's text response (truncated): Based on the fundus photograph provided, here is a structured clinical report:\\\\n\\\\n**1) Image Quality Assessment**\\\\nThe image is a non-stereoscopic, color fundus photograph of the optic disc and surroundi... \\\"},\\\"error\\\":\\\"No image data was found in the API response. Finish reason: STOP. The model returned text instead of an image. This can happen with the gemini-3-pro-image-preview model when the prompt is interpreted as a text request. Try rephrasing your prompt to clearly describe the visual content you want generated. Model's text response (truncated): Based on the fundus photograph provided, here is a structured clinical report:\\\\n\\\\n**1) Image Quality Assessment**\\\\nThe image is a non-stereoscopic, color fundus photograph of the optic disc and surroundi... \\\",\\\"tool_slug\\\":\\\"GEMINI_GENERATE_IMAGE\\\",\\\"index\\\":0}],\\\"total_count\\\":1,\\\"success_count\\\":0,\\\"error_count\\\":1},\\\"error\\\":\\\"1 out of 1 tools failed\\\",\\\"log_id\\\":\\\"log_kW3rYxAf5m-l\\\",\\\"successful\\\":false}\"\n    }\n  ],\n  \"isError\": true\n}",
+      "error": "{\"data\":{\"results\":[{\"response\":{\"successful\":false,\"data\":{\"message\":\"No image data was found in the API response. Finish reason: STOP. The model returned text instead of an image. This can happen with the gemini-3-pro-image-preview model when the prompt is interpreted as a text request. Try rephrasing your prompt to clearly describe the visual content you want generated. Model's text response (truncated): Based on the fundus photograph provided, here is a structured clinical report:\\n\\n**1) Im"
+    }
+  },
+  "completedAt": "2026-08-03T03:56:49.814Z",
+  "success": true
+}
