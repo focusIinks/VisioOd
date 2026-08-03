@@ -188,47 +188,27 @@
       throw new Error("Polling timeout (3 min)");
     }
 
-    // Download and extract result.json from the artifact zip
+    // Read result from the repo file (CORS-safe — uses GitHub Contents API)
+    // The workflow commits result.json to results/{runId}.json
     async function getResult(runId) {
-      const listRes = await fetch(`${API}/repos/${REPO}/actions/runs/${runId}/artifacts`, { headers: headers() });
-      const listJson = await listRes.json();
-      const artifact = listJson.artifacts?.[0];
-      if (!artifact) throw new Error("No artifacts found");
-
-      const dlRes = await fetch(artifact.archive_download_url, { headers: headers(), redirect: "follow" });
-      if (!dlRes.ok) throw new Error(`Download failed (${dlRes.status})`);
-      const zipBuf = new Uint8Array(await dlRes.arrayBuffer());
-
-      return JSON.parse(await extractResultJson(zipBuf));
-    }
-
-    // Minimal ZIP reader — extracts result.json
-    async function extractResultJson(buf) {
-      const view = new DataView(buf.buffer);
-      let offset = 0;
-      while (offset < buf.length - 4) {
-        const sig = view.getUint32(offset, true);
-        if (sig !== 0x04034b50) break;
-        const compMethod = view.getUint16(offset + 8, true);
-        const compSize = view.getUint32(offset + 18, true);
-        const nameLen = view.getUint16(offset + 26, true);
-        const extraLen = view.getUint16(offset + 28, true);
-        const fileName = new TextDecoder().decode(buf.slice(offset + 30, offset + 30 + nameLen));
-        const dataStart = offset + 30 + nameLen + extraLen;
-        const compData = buf.slice(dataStart, dataStart + compSize);
-
-        if (fileName === "result.json") {
-          if (compMethod === 0) return new TextDecoder().decode(compData);
-          if (compMethod === 8) {
-            const ds = new DecompressionStream("deflate-raw");
-            const stream = new Blob([compData]).stream().pipeThrough(ds);
-            const dec = new Uint8Array(await new Response(stream).arrayBuffer());
-            return new TextDecoder().decode(dec);
-          }
+      // Retry a few times — the git commit might take a few seconds after the run completes
+      for (let attempt = 0; attempt < 6; attempt++) {
+        const res = await fetch(`${API}/repos/${REPO}/contents/results/${runId}.json`, { headers: headers() });
+        if (res.ok) {
+          const data = await res.json();
+          // Contents API returns base64-encoded content
+          const content = atob(data.content.replace(/\n/g, ""));
+          return JSON.parse(content);
         }
-        offset = dataStart + compSize;
+        if (res.status === 404) {
+          // File not yet committed — wait and retry
+          await new Promise(r => setTimeout(r, 5000));
+          continue;
+        }
+        const t = await res.text();
+        throw new Error(`Failed to read result (${res.status}): ${t.slice(0, 200)}`);
       }
-      throw new Error("result.json not found in artifact");
+      throw new Error("Result file not found after 30s — the workflow may still be committing");
     }
 
     // =====================================================
