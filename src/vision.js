@@ -8,11 +8,14 @@
  *
  * Usage (in a GitHub Actions worker):
  *   COMPOSIO_API_KEY=ck_... node src/vision.js \
- *     --image-base64 <base64> \
+ *     --image-url https://gist.githubusercontent.com/.../raw/image.png \
  *     --mime-type image/png \
  *     --mode all \
  *     --clinical-context "..." \
  *     --output result.json
+ *
+ * Backward compatible: --image-base64 <base64> still works for callers that
+ * pass the image inline (e.g. local tests).
  */
 
 import { ComposioMcpClient, extractImageUrls, extractText } from "./mcp-client.js";
@@ -69,8 +72,6 @@ async function callGemini(apiKey, geminiArgs) {
 async function main() {
   const opts = parseArgs();
   const apiKey = process.env.COMPOSIO_API_KEY || opts["composio-api-key"];
-  const imageBase64 = opts["image-base64"];
-  const mimeType = opts["mime-type"] || "image/png";
   const mode = opts["mode"] || "all"; // validate | annotate | diagnose | all
   const clinicalContext = typeof opts["clinical-context"] === "string" ? opts["clinical-context"] : "";
   const outputFile = opts["output"] || "result.json";
@@ -79,9 +80,29 @@ async function main() {
     console.error("ERROR: COMPOSIO_API_KEY env var or --composio-api-key is required");
     process.exit(1);
   }
-  if (!imageBase64) {
-    console.error("ERROR: --image-base64 is required");
+  if (!opts["image-url"] && !opts["image-base64"]) {
+    console.error("ERROR: either --image-url or --image-base64 is required");
     process.exit(1);
+  }
+
+  // Resolve the image bytes: either download from a URL, or use a base64 string
+  // passed inline (backward compatible).
+  let imageBase64;
+  let mimeType = opts["mime-type"] || "image/png";
+
+  if (opts["image-url"]) {
+    console.log(`Downloading image from URL: ${opts["image-url"]}`);
+    const imgRes = await fetch(opts["image-url"]);
+    if (!imgRes.ok) {
+      console.error(`ERROR: image download failed: HTTP ${imgRes.status} ${imgRes.statusText}`);
+      process.exit(1);
+    }
+    const buf = Buffer.from(await imgRes.arrayBuffer());
+    imageBase64 = buf.toString("base64");
+    mimeType = opts["mime-type"] || imgRes.headers.get("content-type") || "image/png";
+    console.log(`  → downloaded ${buf.length} bytes (${mimeType})`);
+  } else {
+    imageBase64 = opts["image-base64"];
   }
 
   const result = {

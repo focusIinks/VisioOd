@@ -11,8 +11,8 @@ run-name: "Vision: ${{ inputs.mode }} — ${{ inputs.image_name || 'image' }}"
 on:
   workflow_dispatch:
     inputs:
-      image_base64:
-        description: "Base64-encoded image (no data: prefix)"
+      image_url:
+        description: "Raw URL where the image is hosted (e.g. a raw gist URL)"
         required: true
       mime_type:
         description: "Image MIME type"
@@ -61,7 +61,7 @@ jobs:
           COMPOSIO_API_KEY: ${{ inputs.composio_key || secrets.COMPOSIO_API_KEY }}
         run: |
           node src/vision.js \
-            --image-base64 "${{ inputs.image_base64 }}" \
+            --image-url "${{ inputs.image_url }}" \
             --mime-type "${{ inputs.mime_type }}" \
             --mode "${{ inputs.mode }}" \
             --clinical-context "${{ inputs.clinical_context }}" \
