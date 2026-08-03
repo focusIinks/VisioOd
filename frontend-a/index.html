@@ -176,39 +176,61 @@
       return run.id;
     }
 
-    // Poll for run completion
-    async function pollStatus(runId, onProgress) {
-      for (let i = 0; i < 36; i++) {
-        await new Promise(r => setTimeout(r, 5000));
-        const res = await fetch(`${API}/repos/${REPO}/actions/runs/${runId}`, { headers: headers() });
-        const json = await res.json();
-        if (json.status === "completed") return json.conclusion;
-        if (onProgress) onProgress(json.status, i + 1);
+    // Fetch with retry — handles transient network errors ("Failed to fetch")
+    async function fetchWithRetry(url, opts, retries = 3) {
+      for (let i = 0; i < retries; i++) {
+        try {
+          const res = await fetch(url, opts);
+          if (!res.ok && res.status >= 500) throw new Error(`Server error ${res.status}`);
+          return res;
+        } catch (err) {
+          if (i === retries - 1) throw err;
+          // Wait before retry (exponential backoff)
+          await new Promise(r => setTimeout(r, 1000 * (i + 1)));
+        }
       }
-      throw new Error("Polling timeout (3 min)");
+    }
+
+    // Poll for run completion (with retry on network errors)
+    async function pollStatus(runId, onProgress) {
+      for (let i = 0; i < 48; i++) {
+        await new Promise(r => setTimeout(r, 5000));
+        try {
+          const res = await fetchWithRetry(`${API}/repos/${REPO}/actions/runs/${runId}`, { headers: headers() });
+          const json = await res.json();
+          if (json.status === "completed") return json.conclusion;
+          if (onProgress) onProgress(json.status, i + 1);
+        } catch (err) {
+          // Don't crash on a single failed poll — just keep going
+          if (onProgress) onProgress("retrying", i + 1);
+        }
+      }
+      throw new Error("Polling timeout (4 min)");
     }
 
     // Read result from the repo file (CORS-safe — uses GitHub Contents API)
     // The workflow commits result.json to results/{runId}.json
     async function getResult(runId) {
-      // Retry a few times — the git commit might take a few seconds after the run completes
-      for (let attempt = 0; attempt < 6; attempt++) {
-        const res = await fetch(`${API}/repos/${REPO}/contents/results/${runId}.json`, { headers: headers() });
-        if (res.ok) {
-          const data = await res.json();
-          // Contents API returns base64-encoded content
-          const content = atob(data.content.replace(/\n/g, ""));
-          return JSON.parse(content);
-        }
-        if (res.status === 404) {
-          // File not yet committed — wait and retry
+      for (let attempt = 0; attempt < 8; attempt++) {
+        try {
+          const res = await fetchWithRetry(`${API}/repos/${REPO}/contents/results/${runId}.json`, { headers: headers() });
+          if (res.ok) {
+            const data = await res.json();
+            const content = atob(data.content.replace(/\n/g, ""));
+            return JSON.parse(content);
+          }
+          if (res.status === 404) {
+            await new Promise(r => setTimeout(r, 5000));
+            continue;
+          }
+          const t = await res.text();
+          throw new Error(`Failed to read result (${res.status}): ${t.slice(0, 200)}`);
+        } catch (err) {
+          if (attempt === 7) throw err;
           await new Promise(r => setTimeout(r, 5000));
-          continue;
         }
-        const t = await res.text();
-        throw new Error(`Failed to read result (${res.status}): ${t.slice(0, 200)}`);
       }
-      throw new Error("Result file not found after 30s — the workflow may still be committing");
+      throw new Error("Result file not found after 40s");
     }
 
     // =====================================================
@@ -279,10 +301,10 @@
           currentFile.type || "image/png"
         );
 
-        // Step 4: Poll for completion
+        // Step 4: Poll for completion (with retry on network errors)
         showStatus(`<span class="spinner"></span>Pipeline running (Run #${runId})…`, "info");
         const conclusion = await pollStatus(runId, (status, i) => {
-          showStatus(`<span class="spinner"></span>Run #${runId}: ${status}… (${i}/36)`, "info");
+          showStatus(`<span class="spinner"></span>Run #${runId}: ${status}… (${i}/48)`, "info");
         });
 
         if (conclusion !== "success") {
@@ -290,8 +312,8 @@
           return;
         }
 
-        // Step 5: Download and display the result
-        showStatus('<span class="spinner"></span>Downloading results…', "info");
+        // Step 5: Read result from repo file (CORS-safe)
+        showStatus('<span class="spinner"></span>Reading results…', "info");
         const result = await getResult(runId);
 
         if (!result.success) {
@@ -308,7 +330,13 @@
         document.getElementById("resultsSection").hidden = false;
         showStatus(`✅ Analysis complete! <a href="https://github.com/${REPO}/actions/runs/${runId}" target="_blank">Run #${runId}</a>`, "success");
       } catch (err) {
-        showStatus("❌ " + err.message, "error");
+        // Show which step failed + the run URL for debugging
+        const errMsg = err.message || String(err);
+        let help = "";
+        if (errMsg.includes("Failed to fetch")) {
+          help = `<br><small>This is usually a transient network error. <a href="https://github.com/${REPO}/actions" target="_blank">Check the run status on GitHub</a> — it may have completed successfully.</small>`;
+        }
+        showStatus("❌ " + errMsg + help, "error");
       } finally {
         analyzeBtn.disabled = false;
       }
