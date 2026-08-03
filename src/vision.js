@@ -45,7 +45,7 @@ function parseArgs() {
   return opts;
 }
 
-async function callGemini(apiKey, geminiArgs) {
+async function callGeminiOnce(apiKey, geminiArgs) {
   const mcp = new ComposioMcpClient(apiKey);
   try {
     await mcp.connect();
@@ -67,6 +67,53 @@ async function callGemini(apiKey, geminiArgs) {
   } finally {
     await mcp.close();
   }
+}
+
+/** Check if an error is transient (worth retrying). */
+function isTransientError(result) {
+  const txt = (result.error || result.text || "").toLowerCase();
+  return (
+    txt.includes("no content parts") ||
+    txt.includes("finish reason: other") ||
+    txt.includes("transient") ||
+    txt.includes("temporarily unable") ||
+    txt.includes("429") ||
+    txt.includes("resource_exhausted") ||
+    txt.includes("rate limit") ||
+    txt.includes("timeout") ||
+    txt.includes("503") ||
+    txt.includes("502") ||
+    txt.includes("500")
+  );
+}
+
+/** Call Gemini with automatic retry on transient errors.
+ *  Uses exponential backoff: 2s, 4s, 8s. */
+async function callGemini(apiKey, geminiArgs, maxRetries = 4) {
+  let lastResult;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    if (attempt > 0) {
+      const delay = 2000 * Math.pow(2, attempt - 1); // 2s, 4s, 8s, 16s
+      console.log(`  Retry ${attempt}/${maxRetries} after ${delay}ms (transient error)...`);
+      await new Promise((r) => setTimeout(r, delay));
+    }
+    lastResult = await callGeminiOnce(apiKey, geminiArgs);
+    if (lastResult.ok && lastResult.imageUrls.length > 0) {
+      if (attempt > 0) console.log(`  → Succeeded on retry ${attempt}`);
+      return lastResult;
+    }
+    // For diagnosis step, text response (no image) is OK — check if we got text
+    if (lastResult.text && lastResult.text.length > 100 && !isTransientError(lastResult)) {
+      if (attempt > 0) console.log(`  → Got text response on retry ${attempt}`);
+      return lastResult;
+    }
+    if (!isTransientError(lastResult)) {
+      // Non-transient error — don't retry
+      return lastResult;
+    }
+    // Transient error — retry
+  }
+  return lastResult;
 }
 
 async function main() {
