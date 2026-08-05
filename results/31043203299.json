@@ -1,0 +1,22 @@
+{
+  "mode": "all",
+  "imageName": "1000294523.jpg",
+  "mimeType": "image/jpeg",
+  "startedAt": "2026-08-05T20:15:29.788Z",
+  "steps": {
+    "validation": {
+      "isOcular": true,
+      "message": "Ocular image confirmed.",
+      "imageUrl": "https://temp.4d4f16c61d89ec64e760039c4ec50717.r2.cloudflarestorage.com/938750/gemini/GEMINI_GENERATE_IMAGE/response/7ba384b448ba4ff5d28f124aae968d5d?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=7685aa30fee07632b83ea58979a398d0%2F20260805%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20260805T201547Z&X-Amz-Expires=3600&X-Amz-Signature=bcb9e39680257a03cb79c23ae4731c1a3008e051cba963f607038342a64c1a72&X-Amz-SignedHeaders=host"
+    },
+    "annotation": {
+      "imageUrl": "https://temp.4d4f16c61d89ec64e760039c4ec50717.r2.cloudflarestorage.com/938750/gemini/GEMINI_GENERATE_IMAGE/response/3d6d1a97c72d3f1f8888a755c287495b?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=7685aa30fee07632b83ea58979a398d0%2F20260805%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20260805T201609Z&X-Amz-Expires=3600&X-Amz-Signature=53be732a5647aebe942f2b348c86fd9e21ed4599d9ab80067fd903fb5d8dcbe3&X-Amz-SignedHeaders=host"
+    },
+    "diagnosis": {
+      "text": "**Clinical Image Assessment Report**\n\n**1) Image Quality Assessment:**\n*   The provided image is of extremely poor quality. It is significantly blurred, pixelated, and contains a high level of digital...",
+      "error": "{\"data\":{\"results\":[{\"response\":{\"successful\":false,\"data\":{\"message\":\"No image data was found in the API response. Finish reason: STOP. The model returned text instead of an image. This can happen with the gemini-3-pro-image-preview model when the prompt is interpreted as a text request. Try rephrasing your prompt to clearly describe the visual content you want generated. Model's text response (truncated): **Clinical Image Assessment Report**\\n\\n**1) Image Quality Assessment:**\\n*   The provide"
+    }
+  },
+  "completedAt": "2026-08-05T20:16:16.404Z",
+  "success": true
+}
