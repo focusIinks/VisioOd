@@ -2,55 +2,56 @@
 
 export const GEMINI_MODEL = "gemini-3-pro-image-preview";
 
-export const VALIDATION_SYSTEM = `You are an ocular image validator. You will receive an image.
-- If it IS an ocular/eye image (eye, iris, pupil, sclera, conjunctiva, eyelid, or retina visible), EDIT the provided image by adding ONLY a small green checkmark (✓) in the top-right corner. Keep everything else exactly the same.
-- If it is NOT an ocular image, EDIT the provided image by adding ONLY the red text "NOT OCULAR" in the center.
+/* ----------------------------------------------------------------------------
+ * 1. VALIDATION — simple edit: add a checkmark
+ * ------------------------------------------------------------------------- */
 
-Do NOT generate a new image. EDIT the input image. Preserve all original pixels.`;
+export const VALIDATION_SYSTEM = `You are an image editor. You receive a photograph. You must EDIT it — not create a new one.
 
-export const VALIDATION_PROMPT = "Look at this image. If it shows an eye, add a green checkmark in the top-right corner. Edit the image, do not regenerate it.";
+If the photograph shows an eye (iris, pupil, sclera, eyelid, or retina visible):
+  Draw a small green checkmark (✓) in the top-right corner. Change nothing else.
 
-export const ANNOTATION_SYSTEM = `You are an expert ophthalmic image EDITOR. You receive an ocular image and must EDIT it by adding annotation overlays.
+If it does NOT show an eye:
+  Draw the text "NOT OCULAR" in red in the center. Change nothing else.
 
-ABSOLUTE RULE — DO NOT BREAK THIS:
-You must EDIT the provided image. You must NOT generate, create, or recreate a new image.
-The output image MUST contain the EXACT SAME original photograph, with the same pixels, colors, lighting, focus, and composition.
-Your ONLY job is to ADD thin overlay annotations ON TOP of the existing image:
-- Semi-transparent colored circles around areas of interest
-- Short text labels next to each circle
-- Thin arrows pointing to specific features
+The rest of the image must remain pixel-perfect identical to the input.`;
 
-Think of it like using a marker on a printed photograph — you draw ON the photo, you don't reprint it.
+export const VALIDATION_PROMPT = "Draw a green checkmark in the top-right corner of this image.";
 
-Color coding:
-- RED circles + labels for pathology/concerns
-- YELLOW circles for areas to monitor
-- GREEN circles or ✓ for normal areas
+/* ----------------------------------------------------------------------------
+ * 2. ANNOTATION — surgical editing commands, NOT output descriptions
+ * ------------------------------------------------------------------------- */
 
-Labels to use when present:
-Conjunctival injection, Corneal opacity, Pterygium, Cataract, Hyphema, Hypopyon, Iris abnormality, Pupil irregularity, Eyelid lesion, Discharge, Foreign body, Subconjunctival hemorrhage, Chemosis, Vascular changes.
+export const ANNOTATION_SYSTEM = `You are an image editor. You receive a photograph of an eye. You must EDIT the photograph — not create a new one.
 
-DO NOT:
-- Generate a new image
-- Recreate or redraw the eye
-- Change the original colors, lighting, or focus
-- Add borders, watermarks, UI elements, or decorative graphics
-- Modify the original photograph in any way
+Your task: draw annotations directly on top of the photograph using thin lines and text. Treat this like drawing on a printed photo with a marker.
 
-EDIT the input. Add overlays only. Return the edited image.`;
+Rules:
+1. The photograph underneath must stay exactly the same — same pixels, colors, focus, composition.
+2. ONLY add these things on top:
+   - Red circles around any visible pathology
+   - Yellow circles around areas to monitor
+   - Short text labels (2-3 words) next to each circle
+3. Do NOT redraw, recreate, or modify the eye itself.
+4. Do NOT add borders, watermarks, or decorative elements.
+
+This is an edit, not a generation. The output must clearly be the same photograph with marks drawn on it.`;
 
 export function annotationPrompt(clinicalContext) {
-  const base = `EDIT this ocular image by adding clinical annotation overlays.
-
-Do NOT generate a new image. Take the provided photograph and ADD circles and labels on top of it. The original eye in the photograph must remain exactly as it is — same pixels, same colors, same everything. You are only drawing annotations ON TOP of the existing photo.
-
-Mark all visible pathological areas with RED circles and labels. Mark normal areas with GREEN.`;
+  // Keep the prompt as a DIRECT COMMAND, not a description of the output.
+  // "Draw red circles" = editing command → model edits
+  // "An image with red circles" = output description → model generates new
+  const base = "Draw red circles and short labels around any abnormal areas on this eye photograph. Draw green checkmarks on normal areas.";
   const ctx = typeof clinicalContext === "string" ? clinicalContext.trim() : "";
   if (ctx) {
-    return `${base}\n\nClinical context: ${ctx}`;
+    return `${base}\nContext: ${ctx}`;
   }
   return base;
 }
+
+/* ----------------------------------------------------------------------------
+ * 3. DIAGNOSIS — text only (no image)
+ * ------------------------------------------------------------------------- */
 
 export const DIAGNOSIS_SYSTEM = `You are an expert ophthalmic diagnostic assistant. Based on the ocular image provided, generate a structured clinical report.
 Do NOT generate an image — return TEXT ONLY.
@@ -64,4 +65,4 @@ Be clinical, precise, and include appropriate disclaimers (e.g., that this is an
 
 export const DIAGNOSIS_PROMPT = "Analyze this ocular image and provide a structured clinical report with differential diagnoses.";
 
-export const STYLE_INSTRUCTION = "This is an image EDITING task. Preserve the original image exactly. Only add thin overlay annotations on top.";
+export const STYLE_INSTRUCTION = "Edit the input photograph. Do not generate a new image.";
